@@ -51,6 +51,33 @@ def gauss(x, *p):
     A, mu, sigma = p
     return A*np.exp(-(x-mu)**2/(2.*sigma**2))
 
+def heatind(TK, RH):
+    """
+    should work fine with arrays, or single values, but make sure Temp and Humidity correspond properly
+    Args:
+        T (array?): Temperatures (Kelvin)
+        RH (array?): Relative humidities (percentage) INTEGER PERCENTAGE
+    """
+    # define constants for the equation
+    c1 = -42.379
+    c2 = 2.04901523
+    c3 = 10.14333127
+    c4 = -0.22475541
+    c5 = -6.83783e-3
+    c6 = -5.481717e-2
+    c7 = 1.22874e-3
+    c8 = 8.5282e-4
+    c9 = -1.99e-6    
+    
+    # convert Kelvin to Fahrenheit
+    TF = (TK-273.15)*9/5 + 32
+    HIF = c1 + c2*TF + c3*RH + c4*TF*RH + c5*(TF**2) + c6*(RH**2) + c7*(TF**2)*RH + c8*TF*(RH**2) + c9*(TF**2)*(RH**2)
+    
+    # convert heat index in fahrenheit to Kelvin
+    HIK = (HIF-32)*5/9 + 273.15
+    
+    return HIK
+
 class CombineYearlyFiles:
 
     def __init__(self,sim_dir_loc, output_path, name):
