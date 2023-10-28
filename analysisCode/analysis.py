@@ -17,6 +17,8 @@ TODO:
 -add extreme value dist
 -should i be averaging over lon or lats?
 
+
+
 @author : s1935349
 
 """
@@ -138,34 +140,45 @@ class SingleRun:
 
 class Ensemble:
     """
-    Combines data from different simulation sims
+    Combines data from different simulation sims and takes the mean
 
     inputs:
        SingleRuns : (lst) list of dir locs where .nc datasets generated using SingleRun combineYears are stored
 
-    output(?) is an xarray dataset(?)
+    
     """
     def __init__(self, output_path, names):
-        
+        #lf = xr.open_dataset("/work/ta116/shared/users/tetts_ta/cesm/cesm_inputdata/atm/cam/topo/fv_1.9x2.5_nc3000_Nsw084_Nrs016_Co120_Fi001_ZR_GRNL_031819.nc") 
+        #landfracs = lf.sel(lat=slice(min_lat,max_lat), lon=slice(min_lon,max_lon)).LANDFRAC
         ensemble_ds = xr.open_dataset(output_path + names[0] + ".nc", engine='h5netcdf') 
 
         for i, name in enumerate(names[1:]):
-            sim_new = xr.open_dataset(output_path + names[i] + ".nc", engine='h5netcdf') 
+            sim_new = xr.open_dataset(output_path + names[i] + ".nc", engine='h5netcdf') #* landfracs / landfracs.sum()
             ensemble_ds = xr.concat([ensemble_ds, sim_new], dim = "run") 
+        
 
         self.ds = ensemble_ds
-        self.averaged_ds = ensemble_ds.mean(dim="run") #averaging over runs
+        self.averaged_ds = ensemble_ds.mean(dim=("run"))  #averaging over runs
 
 class HistogramAnalysis:
+    """
+    We've already averaged over runs. We calculate the heat index, multiply by landfractions and then average over southern europe.
+    
+    """
     def __init__(self, ensemble):
         self.ds = ensemble.ds
-
-        self.variable_ds = self.ds.TREFHTMX  #CHANGE THIS IF WANTING TO LOOK AT A DIFFERENT VARIABLE
+        lf = xr.open_dataset("/work/ta116/shared/users/tetts_ta/cesm/cesm_inputdata/atm/cam/topo/fv_1.9x2.5_nc3000_Nsw084_Nrs016_Co120_Fi001_ZR_GRNL_031819.nc") 
+        landfracs = lf.sel(lat=slice(min_lat,max_lat), lon=slice(min_lon,max_lon)).LANDFRAC
+        heatind_overLand = (heatind(self.ds.TREFHT,  self.ds.RHREFHT))* landfracs / landfracs.sum() # calculating the heat index and weighting by landfrac
+        
+        self.variable_ds = heatind_overLand.mean(dim=("lat","lon"))
+        
+        self.ds.TREFHTMX  #CHANGE THIS IF WANTING TO LOOK AT A DIFFERENT VARIABLE
         
         # Here we're converting to Celsius. I just found this easier to sanity check than Kelvin
-        self.variable_ds = self.ds.TREFHTMX - 273.15 
-        self.variable_ds.attrs = self.ds.TREFHTMX.attrs 
-        self.variable_ds.attrs["units"] = "ºC"
+        #self.variable_ds = self.ds.TREFHTMX - 273.15 
+        #self.variable_ds.attrs = self.ds.TREFHTMX.attrs 
+        #self.variable_ds.attrs["units"] = "ºC"
 
 
     def binData(self, binspacing = 0.1, plot=False):
@@ -247,6 +260,8 @@ class HistogramAnalysis:
 
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical/"
 
+
+
 ## We're missing one! also sorry for the clunkiness
 eleanor_sim_path = "/work/ta116/shared/users/eleanorsenior/cesm/archive/HistoricalNEW/atm/hist/"
 tom_sim_path = "/work/ta116/shared/users/s1946411/cesm/archive/Historical/atm/hist/"
@@ -265,6 +280,10 @@ hist.binData(plot=False)
 hist.getThreshold(32)
 hist.fitBinnedData(plot=True)
 plt.show()
+
+
+
+
 
 """
 means = np.zeros(len(names))
@@ -487,4 +506,18 @@ p.axes.coastlines()
 plt.draw()
 
 plt.show()
+
+maxtemp  = Ens.ds.where(landfracs.LANDFRAC, drop=True).TREFHTMX.mean(dim="run")
+.isel(time=0)
+p = Ens.ds.where(landfracs.LANDFRAC,  drop=True).TREFHTMX.isel(time=0).mean(dim="run").plot(
+    subplot_kws=dict(projection=ccrs.Orthographic(min_lat, max_lat), facecolor="gray"),
+    transform=ccrs.PlateCarree(),
+)
+p.axes.set_global()
+
+p.axes.coastlines()
+plt.draw()
+
+plt.show()
+
 """
