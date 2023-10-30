@@ -27,11 +27,13 @@ TODO:
 import matplotlib.pyplot as plt # matplotlib library
 import xarray as xr# xarray
 import numpy as np # numpy
+from scipy import stats
 import cartopy.crs as ccrs # cartopy projections
 import os
 import glob #for file searching 
 from scipy.optimize import curve_fit
 import seaborn as sns
+import pandas as pd
 
 #makes plots prettier
 sns.set_theme()
@@ -49,7 +51,11 @@ max_lat = 45
 def is_summer(month):
     return (month >= 5) & (month < 10)
 
-def gauss(x, *p):
+def days_above_danger(month, ds):
+    
+    return (HI >= 314.5) #K
+
+def gauss_old(x, *p):
     A, mu, sigma = p
     return A*np.exp(-(x-mu)**2/(2.*sigma**2))
 
@@ -156,9 +162,9 @@ class Ensemble:
             sim_new = xr.open_dataset(output_path + names[i] + ".nc", engine='h5netcdf') #* landfracs / landfracs.sum()
             ensemble_ds = xr.concat([ensemble_ds, sim_new], dim = "run") 
         
-
-        self.ds = ensemble_ds
-        self.averaged_ds = ensemble_ds.mean(dim=("run"))  #averaging over runs
+        #self.ds = ensemble_ds
+        self.ds = ensemble_ds.mean(dim=("run"))  #averaging over runs
+        self.no_members = len(names)
 
 class HistogramAnalysis:
     """
@@ -167,13 +173,29 @@ class HistogramAnalysis:
     """
     def __init__(self, ensemble):
         self.ds = ensemble.ds
+        self.no_members = ensemble.no_members
+
         lf = xr.open_dataset("/work/ta116/shared/users/tetts_ta/cesm/cesm_inputdata/atm/cam/topo/fv_1.9x2.5_nc3000_Nsw084_Nrs016_Co120_Fi001_ZR_GRNL_031819.nc") 
         landfracs = lf.sel(lat=slice(min_lat,max_lat), lon=slice(min_lon,max_lon)).LANDFRAC
-        heatind_overLand = (heatind(self.ds.TREFHT,  self.ds.RHREFHT))* landfracs / landfracs.sum() # calculating the heat index and weighting by landfrac
+
+        # calculating the heat index and weighting by landfrac. Essentially a weighted average
+        heatind_overLand = ((heatind(self.ds.TREFHTMX,  self.ds.RHREFHT))* landfracs).sum(dim=("lat","lon"))  / landfracs.sum().data  
+        self.variable_ds = heatind_overLand
+        self.variable_ds.attrs["long_name"] = "Heat Index"
+
+        monthly = self.variable_ds[self.variable_ds > 305.372].resample(time='M').count() #getting number of days per month above EXTREME CAUTION HI
         
-        self.variable_ds = heatind_overLand.mean(dim=("lat","lon"))
+        self.variable_ds = monthly
+
+        rolling_average = self.variable_ds.rolling(time=30).mean()
         
-        self.ds.TREFHTMX  #CHANGE THIS IF WANTING TO LOOK AT A DIFFERENT VARIABLE
+        # Group by year and calculate the maximum rolling average for each year
+        max_rolling_per_year = rolling_average.groupby('time.year').max()
+        #self.variable_ds = max_rolling_per_year
+
+        print("Maximum rolling average per year:", max_rolling_per_year)
+        
+        #self.ds.TREFHTMX  #CHANGE THIS IF WANTING TO LOOK AT A DIFFERENT VARIABLE
         
         # Here we're converting to Celsius. I just found this easier to sanity check than Kelvin
         #self.variable_ds = self.ds.TREFHTMX - 273.15 
@@ -181,10 +203,11 @@ class HistogramAnalysis:
         #self.variable_ds.attrs["units"] = "ºC"
 
 
-    def binData(self, binspacing = 0.1, plot=False):
+    def binData(self, binspacing = 1, plot=False):
         
         # Creating bins for data. 
         min_val, max_val = self.variable_ds.min(), self.variable_ds.max()
+        #min_val = 250
         bins = np.arange(min_val, max_val, binspacing) #creating bins
         bin_centres = (bins[:-1] + bins[1:])/2
 
@@ -193,12 +216,12 @@ class HistogramAnalysis:
 
         counts = (grouped_data.count()).fillna(0)# filling in NaNs
 
-        self.total = np.sum(counts).data # total number of counts
+        self.total = counts.sum().data # total number of counts
 
         probs = counts/self.total # converting to a probability, so we can get a PDF
 
-        if np.sum(probs).data != 1.0: # sanity check 
-            raise Exception(f"The sum of probabilities is {np.sum(probs).data}! It should be 1.0.")
+        #if np.sum(probs).data != 1.0: # sanity check 
+        #    raise Exception(f"The sum of probabilities is {np.sum(probs).data}! It should be 1.0.")
         
         if plot:
             plt.bar(bin_centres, probs, label = f"Ensemble data")
@@ -207,21 +230,16 @@ class HistogramAnalysis:
         self.bin_centres = bin_centres
         self.PDF = probs
 
-    def getThreshold(self, num_years):
+    def getThreshold(self):
         """
         This has to be run after binData
 
-        num_years : (int) number of years simulation ran for. Can be obtained from CombineYearlyFiles
         """
 
-        #CHECK THIS!!
-        #avg_ds = self.ds.mean(dim="run") #averaging over runs
-        #avg_temp = avg_ds.TREFHTMX - 273.15
+        num_years = self.ds["time.year"][-1] - self.ds["time.year"][0] #number of years in simulation
 
-        no_ensemble_members = len(self.ds.run)
-
-        counts_10years = self.total / num_years * 10 / no_ensemble_members
-        prob1_10yr = 1/(counts_10years) #probability for 1 in 10 years
+        counts_10years = self.total / num_years * 10 # number of data points per 10 years
+        prob1_10yr = 1/(counts_10years) # probability for 1 in 10 years
         self.threshold = self.variable_ds.quantile(1-prob1_10yr).data
         print(f"The 1/10 year value is {self.threshold}")
 
@@ -234,8 +252,11 @@ class HistogramAnalysis:
         plt : (boolean) whether to gaussian fit to histogram
         """
         if fit_type == "Gaussian":
+            gauss = lambda x, mu, sigma :  stats.norm.pdf(x, mu, sigma) 
+            
             mu = np.mean(self.variable_ds)
-            p0 = [1., mu, 10.] #A, mu, sigma
+            p0 = [mu, 10.] #A, mu, sigma
+            
             coeff, var_matrix = curve_fit(gauss, self.bin_centres, self.PDF , p0=p0)
 
             hist_fit = gauss(self.bin_centres, *coeff)
@@ -244,16 +265,39 @@ class HistogramAnalysis:
                 plt.plot(self.bin_centres, hist_fit, label =f"Gaussian fit Ensemble")
                 plt.axvline(x=self.threshold, color='k')
             
-            print('Fitted mean = ', coeff[1])
-            print('Fitted standard deviation = ', coeff[2])
-            print('Fitted amp = ', coeff[0])
+            print('Fitted mean = ', coeff[0])
+            print('Fitted standard deviation = ', coeff[1])
+            #print('Fitted amp = ', coeff[0])
 
-            mean  = coeff[1]
-            stdev = coeff[2]
-            amp = coeff[0]
+            mean  = coeff[0]
+            stdev = coeff[1]
+            #amp = coeff[0]
 
-            return mean, stdev, amp
+            return mean, stdev#, amp
+
+        elif fit_type == "GEV":
+            gev = lambda x, c, loc, scale : stats.genextreme.pdf(x, c, loc, scale)
+            loc0 = np.mean(self.variable_ds)
+            p0 = [-.8, loc0, 1]
+
+            coeff, var_matrix = curve_fit(gev, self.bin_centres, self.PDF , p0=p0)
+
+            hist_fit =  gev(self.bin_centres, *coeff)
+
+            if plot:
+                plt.plot(self.bin_centres, hist_fit, label =f"GEV fit Ensemble")
+                plt.plot(self.bin_centres, self.PDF)
+                plt.axvline(x=self.threshold, color='k')
             
+            print('Fitted c = ', coeff[0])
+            print('Fitted loc = ', coeff[1])
+            print('Fitted scale = ', coeff[2])
+
+            c  = coeff[0]
+            loc = coeff[1]
+            scale = coeff[2]
+
+            return c, loc, scale
         else:
             raise Exception("Sorry, you're gonna have to code this..")
 
@@ -271,14 +315,12 @@ simon2_sim_path = '/work/ta116/shared/users/tetts_ta/cesm/archive/FHIST_1982_201
 names = ["eleanorMAYSUMMER","tomMAYSUMMER","simon1MAYSUMMER","simon2MAYSUMMER"]
 sim_paths = [eleanor_sim_path, tom_sim_path, simon1_sim_path, simon2_sim_path ] 
 
-
 Ens = Ensemble(output_path, names)
-(Ens.ds.TREFHTMX.isel(lat=2, lon=2).mean(dim="run")).plot.line()
-plt.show()
+#Ens.ds.TREFHTMX.isel(lat=2, lon=2).plot.line()
 hist = HistogramAnalysis(Ens)
-hist.binData(plot=False)
-hist.getThreshold(32)
-hist.fitBinnedData(plot=True)
+hist.binData(plot=True)
+hist.getThreshold()
+hist.fitBinnedData(fit_type = "Gaussian",plot=True)
 plt.show()
 
 
@@ -302,7 +344,7 @@ ensemble_stdev = np.mean(stdevs)
 ensemble_amp = np.mean(amplitudes)
 
 Ts = np.arange(0,45,0.1)
-ensemble_fit = gauss(Ts, ensemble_amp, ensemble_mean, ensemble_stdev)
+ensemble_fit = gauss_old(Ts, ensemble_amp, ensemble_mean, ensemble_stdev)
 
 plt.plot(Ts, ensemble_fit, label ="Gaussian fit ENSEMBLE")
 
