@@ -197,7 +197,7 @@ class HistogramAnalysis:
         
         
         #The Heat Index cutoff (305.372K is the Extreme Caution category)
-        HI_cutoff =  312.594#305.372 # 312.594 (danger cutoff) 
+        HI_cutoff =  305.372 # 312.594 (danger cutoff) 
 
         heatind_overLand = heatind(self.ds.TREFHTMX,  self.ds.RHREFHT) #calculate HI at all grid points
         bimonthly = heatind_overLand.where(heatind_overLand > HI_cutoff).resample(time='15D').count() #counting number of days/15 of HI>extreme caution
@@ -220,9 +220,9 @@ class HistogramAnalysis:
 
         # Putting data into our bins
         grouped_data =  self.variable_ds.groupby_bins(self.variable_ds, bins, labels=bin_centres) 
-
+        
         counts = (grouped_data.count()).fillna(0)# filling in NaNs
-
+        
         self.total = counts.sum().data # total number of counts
 
         probs = counts/self.total # converting to a probability, so we can get a PDF
