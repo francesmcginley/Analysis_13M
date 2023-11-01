@@ -197,7 +197,7 @@ class HistogramAnalysis:
         
         
         #The Heat Index cutoff (305.372K is the Extreme Caution category)
-        HI_cutoff =  305.372 # 312.594 (danger cutoff) 
+        HI_cutoff =  312.594#305.372 # 312.594 (danger cutoff) 
 
         heatind_overLand = heatind(self.ds.TREFHTMX,  self.ds.RHREFHT) #calculate HI at all grid points
         bimonthly = heatind_overLand.where(heatind_overLand > HI_cutoff).resample(time='15D').count() #counting number of days/15 of HI>extreme caution
@@ -206,7 +206,7 @@ class HistogramAnalysis:
         lf = xr.open_dataset("/work/ta116/shared/users/tetts_ta/cesm/cesm_inputdata/atm/cam/topo/fv_1.9x2.5_nc3000_Nsw084_Nrs016_Co120_Fi001_ZR_GRNL_031819.nc") 
         landfracs = lf.sel(lat=slice(min_lat,max_lat), lon=slice(min_lon,max_lon)).LANDFRAC
 
-        self.variable_ds = (bimonthly * landfracs).sum(dim=("lat","lon"))  / landfracs.sum().data  # weighted spatial average
+        self.variable_ds = (bimonthly * landfracs).sum(dim=("lat","lon"))  / landfracs.sum().data # weighted spatial average
 
         self.variable_ds.attrs["long_name"] = f"#Days per 15 with average HI>{HI_cutoff}" # for correct labelling
 
@@ -300,7 +300,7 @@ class HistogramAnalysis:
 
             p0 = [np.mean(self.variable_ds)]
 
-            coeff, var_matrix = curve_fit(poiss, self.bin_centres, self.PDF , p0=4)
+            coeff, var_matrix = curve_fit(poiss, self.bin_centres, self.PDF , p0=p0)
 
             hist_fit =  poiss(self.bin_centres, *coeff)
 
@@ -317,36 +317,36 @@ class HistogramAnalysis:
         else:
             raise Exception("Sorry, you're gonna have to code this..")
 
-    def getThreshold(self, threshold = 0.95):
+    def getThreshold(self, threshold = 0.95, plot=False):
         """
         This has to be run after fitBinnedData
 
         """
         if self.fit_type == "Gaussian":
-            thr = stats.norm.cdf(threshold, self.coeffs)
+            thr = stats.norm.cdf(threshold, self.coeff)
             
         elif self.fit_type == "Poisson":
-            thr = stats.poisson.cdf(threshold, self.coeffs)
+            thr = stats.poisson.cdf(threshold, self.coeff)
 
         elif self.fit_type == "GEV":   
-            thr = stats.genextreme.cdf(threshold, self.coeffs)
+            thr = stats.genextreme.cdf(threshold, self.coeff)
 
         print(thr)
         if plot:
-            plt.axvline(x=thr, color='k')
+            plt.axvline(x=thr[0], color='k')
 
-        return self.threshold
-
-
+        return thr
 
 
-output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023/" #change this to analyse a different dataset in ./Data directory
-
-names = []
+###INPUTS
+output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/" #change this to analyse a different dataset in ./Data directory
+fit_type = "GEV"
+ensemble_name = output_path.split('/')[-2]
 
 lst = [os.listdir(output_path)][0]
 lst.sort()
 
+names = []
 for i, f in enumerate(lst):
     name = f.split('.')[0]
     names = names + [name]
@@ -354,8 +354,9 @@ for i, f in enumerate(lst):
 Ens = Ensemble(output_path, names)
 hist = HistogramAnalysis(Ens)
 hist.binData(plot=False)
-hist.fitBinnedData(fit_type = "Poisson",plot=True)
+hist.fitBinnedData(fit_type = fit_type,plot=True)
 hist.getThreshold(plot=True)
+plt.title(f"{ensemble_name}")
 plt.legend()
 plt.show()
 
@@ -363,8 +364,7 @@ plt.show()
 
 
 
-
-###### EVERYTHING FROM HERE ON IS OUTDATED ############
+####################################################### EVERYTHING FROM HERE ON IS OUTDATED ##################################################################################
 
 """
 
