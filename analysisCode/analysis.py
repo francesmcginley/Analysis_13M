@@ -146,8 +146,7 @@ class CombineYearlyFiles:
 
 class SingleRun:
     """
-    At the moment the methods are specific to maxTemp, but this should be easy enough to generalise. 
-    I also haven't had time to look into generalised extreme value distributions..  
+    For looking at single runs
     """
     def __init__(self,sim_dir_loc, output_path, name):
         """
@@ -313,23 +312,50 @@ class HistogramAnalysis:
             mu = coeff[0]
 
             self.coeff = coeff
+        
+        elif fit_type == "Pareto":
+            pareto = lambda x, b, loc, scale : stats.pareto.pdf(x, b, loc, scale)  
+
+            loc0 = np.mean(self.variable_ds)
+            p0 = [0.8, -0.1, 1]
+
+            coeff, var_matrix = curve_fit(pareto, self.bin_centres, self.PDF , p0=p0)
+
+            hist_fit =  pareto(self.bin_centres, *coeff)
+
+            if plot:
+                plt.plot(self.bin_centres, hist_fit, label =f"Pareto fit Ensemble")
+                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data")
             
+            print('Fitted b = ', coeff[0])
+            print('Fitted loc = ', coeff[1])
+            print('Fitted scale = ', coeff[2])
+
+            b  = coeff[0]
+            loc = coeff[1]
+            scale = coeff[2]
+
+            self.coeff = coeff
+        
         else:
             raise Exception("Sorry, you're gonna have to code this..")
 
-    def getThreshold(self, threshold = 0.95, plot=False):
+    def getThreshold(self, threshold = 0.9, plot=False):
         """
         This has to be run after fitBinnedData
 
         """
         if self.fit_type == "Gaussian":
-            thr = stats.norm.cdf(threshold, self.coeff)
+            thr = stats.norm.ppf(threshold, self.coeff)
             
         elif self.fit_type == "Poisson":
-            thr = stats.poisson.cdf(threshold, self.coeff)
+            thr = stats.poisson.ppf(threshold, self.coeff)
 
         elif self.fit_type == "GEV":   
-            thr = stats.genextreme.cdf(threshold, self.coeff)
+            thr = stats.genextreme.ppf(threshold, self.coeff)
+
+        elif self.fit_type == "Pareto":
+            thr = stats.pareto.ppf(threshold, self.coeff)
 
         print(thr)
         if plot:
@@ -339,8 +365,8 @@ class HistogramAnalysis:
 
 
 ###INPUTS
-output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/" #change this to analyse a different dataset in ./Data directory
-fit_type = "GEV"
+output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023/" #change this to analyse a different dataset in ./Data directory
+fit_type = "Poisson"
 ensemble_name = output_path.split('/')[-2]
 
 lst = [os.listdir(output_path)][0]
@@ -357,9 +383,18 @@ hist.binData(plot=False)
 hist.fitBinnedData(fit_type = fit_type,plot=True)
 hist.getThreshold(plot=True)
 plt.title(f"{ensemble_name}")
+plt.plot(hist.bin_centres, stats.genextreme.pdf(hist.bin_centres,  -2.2228824509769116, 2.6929800202388736, 5.381104853794224), label='Historical2023')
 plt.legend()
 plt.show()
 
+#PI_2023:
+#Fitted c =  -2.0088646041539535
+#Fitted loc =  1.8422002611315016
+#Fitted scale =  3.1348101719270263
+#Historical2023
+#Fitted c =  -2.2228824509769116
+#Fitted loc =  2.6929800202388736
+#Fitted scale =  5.381104853794224
 
 
 
