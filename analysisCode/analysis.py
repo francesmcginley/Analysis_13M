@@ -6,7 +6,18 @@ CombineYearlyFiles - combines data from a single sim. Crops to Southern Europe a
 
 SingleRun - reads .nc files output by CombineYearlyFiles
 Ensemble -  combines data runs within an ensemble, by reading CombineYearlyFiles .nc output
-HistogramAnalysis - bins data, fits gaussian to binned data, computed threshold..
+HistogramAnalysis - bins data, fits gaussian/poisson/gev to binned data, computes threshold..
+
+Our method:
+0. Read in sim output files, crop to summer months and Southern Europe lat lon, and save as .nc file in ./Data directory (this all happens in CombineYearlyFiles) 
+0.5.  Either - Open saved .nc file. Use Ensemble class to create an ensemble object that can be input to class HistogramAnalysis. 
+      OR (if not looking at an ensemble) - Open saved .nc file. Use SingleRun class to create an SingleRun object that can be input to class HistogramAnalysis. 
+
+(all other steps are in class HistogramAnalysis)
+1. For each spatial gridpoint, calculate how many days per 15-day period are above a HI-cutoff (This value hasn't been decided upon yet -  will change after bias correction. For now we use 305.372K)
+2. Take a weighted average over lat and lon. We do this by multiplying by land fractions and dividing by the sum of land fractions
+3. Bin data into 1-day bins (may change?) to get a histogram
+4. Fit a gaussian to the histogram
 
 
 TODO:
@@ -51,10 +62,6 @@ max_lat = 45
 # This function is used for splicing to summer months, between March and September.
 def is_summer(month):
     return (month >= 5) & (month < 10)
-
-def days_above_danger(month, ds):
-    
-    return (HI >= 314.5) #K
 
 def gauss_old(x, *p):
     A, mu, sigma = p
@@ -151,12 +158,12 @@ class SingleRun:
 
 class Ensemble:
     """
-    Combines data from different simulation sims and takes the mean
+    Combines data from different simulation sims 
 
     inputs:
-       SingleRuns : (lst) list of dir locs where .nc datasets generated using SingleRun combineYears are stored
+       output_path : (str)  dir locs where .nc datasets (already cropped to summer and SE) are stored. ie ('./Data/Historical2023/')
+       names : (lst) list of names of ensemble runs, without '.nc' ending (ie. ['jubauer_0', 's1935349_0',...])
 
-    
     """
     def __init__(self, output_path, names):
         #lf = xr.open_dataset("/work/ta116/shared/users/tetts_ta/cesm/cesm_inputdata/atm/cam/topo/fv_1.9x2.5_nc3000_Nsw084_Nrs016_Co120_Fi001_ZR_GRNL_031819.nc") 
@@ -173,53 +180,41 @@ class Ensemble:
 
 class HistogramAnalysis:
     """
-    We've already averaged over runs. We calculate the heat index, multiply by landfractions and then average over southern europe.
+    This is the class to use for fitting data. 
+
+    1. For each spatial gridpoint, calculate how many days per 15-day period are above a HI-cutoff (This value hasn't been decided upon yet -  will change after bias correction. For now we use 305.372K)
+    2. Take a weighted average over lat and lon. We do this by multiplying by land fractions and dividing by the sum of land fractions
+    3. Bin data into 1-day bins (may change?) to get a histogram
+    4. Fit a gaussian to the histogram
     
+    inputs:
+
+    ensemble : Ensemble OR SingleRun object, with .ds 
     """
+
     def __init__(self, ensemble):
         self.ds = ensemble.ds
-        self.no_members = ensemble.no_members
-
-        lf = xr.open_dataset("/work/ta116/shared/users/tetts_ta/cesm/cesm_inputdata/atm/cam/topo/fv_1.9x2.5_nc3000_Nsw084_Nrs016_Co120_Fi001_ZR_GRNL_031819.nc") 
-        landfracs = lf.sel(lat=slice(min_lat,max_lat), lon=slice(min_lon,max_lon)).LANDFRAC
-
-        # calculating the heat index and weighting by landfrac. Essentially a weighted average
-        HI_cutoff =  305.372 # 312.594 (danger cutoff) #308.9833(Mid Extreme caution)
+        
+        
+        #The Heat Index cutoff (305.372K is the Extreme Caution category)
+        HI_cutoff =  305.372 # 312.594 (danger cutoff) 
 
         heatind_overLand = heatind(self.ds.TREFHTMX,  self.ds.RHREFHT) #calculate HI at all grid points
         bimonthly = heatind_overLand.where(heatind_overLand > HI_cutoff).resample(time='15D').count() #counting number of days/15 of HI>extreme caution
 
+        # Weighting by landfrac. Essentially a weighted average over lon and lat
+        lf = xr.open_dataset("/work/ta116/shared/users/tetts_ta/cesm/cesm_inputdata/atm/cam/topo/fv_1.9x2.5_nc3000_Nsw084_Nrs016_Co120_Fi001_ZR_GRNL_031819.nc") 
+        landfracs = lf.sel(lat=slice(min_lat,max_lat), lon=slice(min_lon,max_lon)).LANDFRAC
+
         self.variable_ds = (bimonthly * landfracs).sum(dim=("lat","lon"))  / landfracs.sum().data  # weighted spatial average
 
         self.variable_ds.attrs["long_name"] = f"#Days per 15 with average HI>{HI_cutoff}" # for correct labelling
-        
-        #)* landfracs).sum(dim=("lat","lon"))  / landfracs.sum().data  
-        #print(heatind_overLand)
-        #self.variable_ds = heatind_overLand
-        
-
-        #rolling_average = self.variable_ds.rolling(time=3).mean()
-        #self.variable_ds = self.rolling_average
-        
-        # Group by year and calculate the maximum rolling average for each year
-        #max_rolling_per_year = rolling_average.groupby('time.year').max()
-        #self.variable_ds = max_rolling_per_year
-
-        #print("Maximum rolling average per year:", max_rolling_per_year)
-        
-        #self.ds.TREFHTMX  #CHANGE THIS IF WANTING TO LOOK AT A DIFFERENT VARIABLE
-         
-        # Here we're converting to Celsius. I just found this easier to sanity check than Kelvin
-        #self.variable_ds = self.ds.TREFHTMX - 273.15 
-        #self.variable_ds.attrs = self.ds.TREFHTMX.attrs 
-        #self.variable_ds.attrs["units"] = "ºC"
 
 
     def binData(self, binspacing = 1, plot=False):
         
         # Creating bins for data. 
         min_val, max_val = self.variable_ds.min(), self.variable_ds.max()
-        #min_val = 250
         bins = np.arange(min_val, max_val, binspacing) #creating bins
         bin_centres = (bins[:-1] + bins[1:])/2
 
@@ -336,17 +331,14 @@ class HistogramAnalysis:
         else:
             raise Exception("Sorry, you're gonna have to code this..")
 
-"""
-
-output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023/"
-
-sim_parent_path = '/work/ta116/shared/users/jubauer/cesm/archive/Historical2023'
 
 
-sim_paths = []
+
+output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023/" #change this to analyse a different dataset in ./Data directory
+
 names = []
 
-lst = [os.listdir("/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023")][0]
+lst = [os.listdir(output_path)][0]
 lst.sort()
 
 for i, f in enumerate(lst):
@@ -355,13 +347,20 @@ for i, f in enumerate(lst):
 
 Ens = Ensemble(output_path, names)
 hist = HistogramAnalysis(Ens)
-hist.binData(plot=False)
+hist.binData(plot=True)
 hist.getThreshold()
-hist.fitBinnedData(fit_type = "GEV",plot=True)
+hist.fitBinnedData(fit_type = "Gaussian",plot=True)
 plt.legend()
 plt.show()
 
 
+
+
+
+
+###### EVERYTHING FROM HERE ON IS OUTDATED ############
+
+"""
 
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical/"
 
@@ -383,6 +382,7 @@ hist.fitBinnedData(fit_type = "Poisson",plot=True)
 plt.legend()
 plt.show()
 """
+
 """
 output_path = '/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/'
 sim_parent_path = '/work/ta116/shared/users/eleanorsenior/cesm/archive/PI_2023_ensemble'
@@ -646,4 +646,26 @@ plt.draw()
 
 plt.show()
 
+
+
+        #)* landfracs).sum(dim=("lat","lon"))  / landfracs.sum().data  
+        #print(heatind_overLand)
+        #self.variable_ds = heatind_overLand
+        #self.no_members = ensemble.no_members 
+
+        #rolling_average = self.variable_ds.rolling(time=3).mean()
+        #self.variable_ds = self.rolling_average
+        
+        # Group by year and calculate the maximum rolling average for each year
+        #max_rolling_per_year = rolling_average.groupby('time.year').max()
+        #self.variable_ds = max_rolling_per_year
+
+        #print("Maximum rolling average per year:", max_rolling_per_year)
+        
+        #self.ds.TREFHTMX  #CHANGE THIS IF WANTING TO LOOK AT A DIFFERENT VARIABLE
+         
+        # Here we're converting to Celsius. I just found this easier to sanity check than Kelvin
+        #self.variable_ds = self.ds.TREFHTMX - 273.15 
+        #self.variable_ds.attrs = self.ds.TREFHTMX.attrs 
+        #self.variable_ds.attrs["units"] = "ºC"
 """
