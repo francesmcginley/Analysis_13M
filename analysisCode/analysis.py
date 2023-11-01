@@ -34,6 +34,7 @@ import glob #for file searching
 from scipy.optimize import curve_fit
 import seaborn as sns
 import pandas as pd
+import scipy
 
 #makes plots prettier
 sns.set_theme()
@@ -58,6 +59,10 @@ def days_above_danger(month, ds):
 def gauss_old(x, *p):
     A, mu, sigma = p
     return A*np.exp(-(x-mu)**2/(2.*sigma**2))
+
+def poiss(x, *p):
+    mu = p[0]
+    return (np.exp(-mu)* mu**x / scipy.special.factorial(x))
 
 def heatind(TK, RH):
     """
@@ -130,7 +135,7 @@ class CombineYearlyFiles:
 
         self.num_years = len(year_files)
 
-        return self.num_years
+        #return self.num_years
 
 class SingleRun:
     """
@@ -163,7 +168,7 @@ class Ensemble:
             ensemble_ds = xr.concat([ensemble_ds, sim_new], dim = "run") 
         
         #self.ds = ensemble_ds
-        self.ds = ensemble_ds.mean(dim=("run"))  #averaging over runs
+        self.ds = ensemble_ds#.mean(dim=("run"))  #averaging over runs
         self.no_members = len(names)
 
 class HistogramAnalysis:
@@ -179,24 +184,31 @@ class HistogramAnalysis:
         landfracs = lf.sel(lat=slice(min_lat,max_lat), lon=slice(min_lon,max_lon)).LANDFRAC
 
         # calculating the heat index and weighting by landfrac. Essentially a weighted average
-        heatind_overLand = ((heatind(self.ds.TREFHTMX,  self.ds.RHREFHT))* landfracs).sum(dim=("lat","lon"))  / landfracs.sum().data  
-        self.variable_ds = heatind_overLand
-        self.variable_ds.attrs["long_name"] = "Heat Index"
+        HI_cutoff =  305.372 # 312.594 (danger cutoff) #308.9833(Mid Extreme caution)
 
-        monthly = self.variable_ds[self.variable_ds > 305.372].resample(time='M').count() #getting number of days per month above EXTREME CAUTION HI
+        heatind_overLand = heatind(self.ds.TREFHTMX,  self.ds.RHREFHT) #calculate HI at all grid points
+        bimonthly = heatind_overLand.where(heatind_overLand > HI_cutoff).resample(time='15D').count() #counting number of days/15 of HI>extreme caution
+
+        self.variable_ds = (bimonthly * landfracs).sum(dim=("lat","lon"))  / landfracs.sum().data  # weighted spatial average
+
+        self.variable_ds.attrs["long_name"] = f"#Days per 15 with average HI>{HI_cutoff}" # for correct labelling
         
-        self.variable_ds = monthly
+        #)* landfracs).sum(dim=("lat","lon"))  / landfracs.sum().data  
+        #print(heatind_overLand)
+        #self.variable_ds = heatind_overLand
+        
 
-        rolling_average = self.variable_ds.rolling(time=30).mean()
+        #rolling_average = self.variable_ds.rolling(time=3).mean()
+        #self.variable_ds = self.rolling_average
         
         # Group by year and calculate the maximum rolling average for each year
-        max_rolling_per_year = rolling_average.groupby('time.year').max()
+        #max_rolling_per_year = rolling_average.groupby('time.year').max()
         #self.variable_ds = max_rolling_per_year
 
-        print("Maximum rolling average per year:", max_rolling_per_year)
+        #print("Maximum rolling average per year:", max_rolling_per_year)
         
         #self.ds.TREFHTMX  #CHANGE THIS IF WANTING TO LOOK AT A DIFFERENT VARIABLE
-        
+         
         # Here we're converting to Celsius. I just found this easier to sanity check than Kelvin
         #self.variable_ds = self.ds.TREFHTMX - 273.15 
         #self.variable_ds.attrs = self.ds.TREFHTMX.attrs 
@@ -261,8 +273,11 @@ class HistogramAnalysis:
 
             hist_fit = gauss(self.bin_centres, *coeff)
 
+            coeff, var_matrix = curve_fit(gauss_old, self.bin_centres, self.PDF , p0=[0.01, mu, 10.])
+            hist_fit = gauss_old(self.bin_centres, *coeff)
+
             if plot:
-                plt.plot(self.bin_centres, hist_fit, label =f"Gaussian fit Ensemble")
+                plt.bar(self.bin_centres, hist_fit, label =f"Gaussian fit Ensemble")
                 plt.axvline(x=self.threshold, color='k')
             
             print('Fitted mean = ', coeff[0])
@@ -286,7 +301,7 @@ class HistogramAnalysis:
 
             if plot:
                 plt.plot(self.bin_centres, hist_fit, label =f"GEV fit Ensemble")
-                plt.plot(self.bin_centres, self.PDF)
+                plt.bar(self.bin_centres, self.PDF)
                 plt.axvline(x=self.threshold, color='k')
             
             print('Fitted c = ', coeff[0])
@@ -298,13 +313,57 @@ class HistogramAnalysis:
             scale = coeff[2]
 
             return c, loc, scale
+        elif fit_type == "Poisson":
+            poisson = lambda x, mu : stats.poisson.pmf(x, mu)
+
+            p0 = [np.mean(self.variable_ds)]
+
+            coeff, var_matrix = curve_fit(poiss, self.bin_centres, self.PDF , p0=4)
+
+            hist_fit =  poiss(self.bin_centres, *coeff)
+
+            if plot:
+                plt.bar(self.bin_centres, self.PDF, label="data")
+                plt.axvline(x=self.threshold, color='k')
+                plt.plot(self.bin_centres, hist_fit, label =f"Poisson fit Ensemble", color='orange')
+            
+            print('Fitted mu = ', coeff[0])
+
+            mu = coeff[0]
+
+            return mu
+            
         else:
             raise Exception("Sorry, you're gonna have to code this..")
 
 
+
+output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023/"
+
+sim_parent_path = '/work/ta116/shared/users/jubauer/cesm/archive/Historical2023'
+
+
+sim_paths = []
+names = []
+
+lst = [os.listdir("/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023")][0]
+lst.sort()
+
+for i, f in enumerate(lst):
+    name = f.split('.')[0]
+    names = names + [name]
+
+Ens = Ensemble(output_path, names)
+hist = HistogramAnalysis(Ens)
+hist.binData(plot=False)
+hist.getThreshold()
+hist.fitBinnedData(fit_type = "GEV",plot=True)
+plt.legend()
+plt.show()
+
+
+"""
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical/"
-
-
 
 ## We're missing one! also sorry for the clunkiness
 eleanor_sim_path = "/work/ta116/shared/users/eleanorsenior/cesm/archive/HistoricalNEW/atm/hist/"
@@ -313,21 +372,35 @@ simon1_sim_path = '/work/ta116/shared/users/tetts_ta/cesm/archive/FHIST_1982_201
 simon2_sim_path = '/work/ta116/shared/users/tetts_ta/cesm/archive/FHIST_1982_2014_OSTIA_a/atm/hist/'
 
 names = ["eleanorMAYSUMMER","tomMAYSUMMER","simon1MAYSUMMER","simon2MAYSUMMER"]
-sim_paths = [eleanor_sim_path, tom_sim_path, simon1_sim_path, simon2_sim_path ] 
+#sim_paths = [eleanor_sim_path, tom_sim_path, simon1_sim_path, simon2_sim_path ] 
 
 Ens = Ensemble(output_path, names)
 #Ens.ds.TREFHTMX.isel(lat=2, lon=2).plot.line()
 hist = HistogramAnalysis(Ens)
-hist.binData(plot=True)
+hist.binData(plot=False)
 hist.getThreshold()
-hist.fitBinnedData(fit_type = "Gaussian",plot=True)
+hist.fitBinnedData(fit_type = "Poisson",plot=True)
+plt.legend()
 plt.show()
-
-
-
-
-
 """
+"""
+for i, sim_path in enumerate(lst):
+        sim_dir_loc = sim_parent_path +'/'+ sim_path + "/atm/hist/"
+        sim_paths = sim_paths+[sim_dir_loc]
+        names = names+ ["jubauer_"+str(i)]
+
+names = []
+sim_paths = []
+base = "/work/ta116/shared/users/s1946411/cesm/archive/Historical2023_"
+for i in range(1,26):
+    sim_paths = sim_paths + [base+str(i)+"/atm/hist/" ]
+    names = names + [f'tom_{i}']
+
+print(sim_paths[1])
+for ind, name in enumerate(names):
+    CombineYearlyFiles(sim_paths[ind], output_path, name)
+
+
 means = np.zeros(len(names))
 stdevs = np.zeros(len(names))
 amplitudes = np.zeros(len(names))
