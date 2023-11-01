@@ -336,7 +336,7 @@ class HistogramAnalysis:
         else:
             raise Exception("Sorry, you're gonna have to code this..")
 
-
+"""
 
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023/"
 
@@ -362,7 +362,7 @@ plt.legend()
 plt.show()
 
 
-"""
+
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical/"
 
 ## We're missing one! also sorry for the clunkiness
@@ -384,10 +384,21 @@ plt.legend()
 plt.show()
 """
 """
+output_path = '/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/'
+sim_parent_path = '/work/ta116/shared/users/eleanorsenior/cesm/archive/PI_2023_ensemble'
+lst = [os.listdir('/work/ta116/shared/users/eleanorsenior/cesm/archive/PI_2023_ensemble')][0]
+lst.sort()
+names = []
+sim_paths = []
 for i, sim_path in enumerate(lst):
         sim_dir_loc = sim_parent_path +'/'+ sim_path + "/atm/hist/"
         sim_paths = sim_paths+[sim_dir_loc]
-        names = names+ ["jubauer_"+str(i)]
+        names = names+ ["eleanor_"+str(i)]
+#print(names, sim_paths)
+names = ['tetts_ta_0']
+sim_paths = ['/work/ta116/shared/users/tetts_ta/cesm/archive/PI_2023/atm/hist/']
+for ind, name in enumerate(names):
+    CombineYearlyFiles(sim_paths[ind], output_path, name)
 
 names = []
 sim_paths = []
