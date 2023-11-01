@@ -231,26 +231,11 @@ class HistogramAnalysis:
         #    raise Exception(f"The sum of probabilities is {np.sum(probs).data}! It should be 1.0.")
         
         if plot:
-            plt.bar(bin_centres, probs, label = f"Ensemble data")
+            plt.bar(bin_centres, probs, label = f"Simulated data")
             #plt.show()
         
         self.bin_centres = bin_centres
         self.PDF = probs
-
-    def getThreshold(self):
-        """
-        This has to be run after binData
-
-        """
-
-        num_years = self.ds["time.year"][-1] - self.ds["time.year"][0] #number of years in simulation
-
-        counts_10years = self.total / num_years * 10 # number of data points per 10 years
-        prob1_10yr = 1/(counts_10years) # probability for 1 in 10 years
-        self.threshold = self.variable_ds.quantile(1-prob1_10yr).data
-        print(f"The 1/10 year value is {self.threshold}")
-
-        return self.threshold
     
     def fitBinnedData(self, fit_type = "Gaussian", plot=False):
         """
@@ -258,6 +243,7 @@ class HistogramAnalysis:
 
         plt : (boolean) whether to gaussian fit to histogram
         """
+        self.fit_type = fit_type
         if fit_type == "Gaussian":
             gauss = lambda x, mu, sigma :  stats.norm.pdf(x, mu, sigma) 
             
@@ -273,7 +259,8 @@ class HistogramAnalysis:
 
             if plot:
                 plt.bar(self.bin_centres, hist_fit, label =f"Gaussian fit Ensemble")
-                plt.axvline(x=self.threshold, color='k')
+                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data")
+
             
             print('Fitted mean = ', coeff[0])
             print('Fitted standard deviation = ', coeff[1])
@@ -283,7 +270,7 @@ class HistogramAnalysis:
             stdev = coeff[1]
             #amp = coeff[0]
 
-            return mean, stdev#, amp
+            self.coeff = coeff
 
         elif fit_type == "GEV":
             gev = lambda x, c, loc, scale : stats.genextreme.pdf(x, c, loc, scale)
@@ -296,8 +283,7 @@ class HistogramAnalysis:
 
             if plot:
                 plt.plot(self.bin_centres, hist_fit, label =f"GEV fit Ensemble")
-                plt.bar(self.bin_centres, self.PDF)
-                plt.axvline(x=self.threshold, color='k')
+                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data")
             
             print('Fitted c = ', coeff[0])
             print('Fitted loc = ', coeff[1])
@@ -307,7 +293,8 @@ class HistogramAnalysis:
             loc = coeff[1]
             scale = coeff[2]
 
-            return c, loc, scale
+            self.coeff = coeff
+
         elif fit_type == "Poisson":
             poisson = lambda x, mu : stats.poisson.pmf(x, mu)
 
@@ -318,18 +305,37 @@ class HistogramAnalysis:
             hist_fit =  poiss(self.bin_centres, *coeff)
 
             if plot:
-                plt.bar(self.bin_centres, self.PDF, label="data")
-                plt.axvline(x=self.threshold, color='k')
+                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data")
                 plt.plot(self.bin_centres, hist_fit, label =f"Poisson fit Ensemble", color='orange')
             
             print('Fitted mu = ', coeff[0])
 
             mu = coeff[0]
 
-            return mu
+            self.coeff = coeff
             
         else:
             raise Exception("Sorry, you're gonna have to code this..")
+
+    def getThreshold(self, threshold = 0.95):
+        """
+        This has to be run after fitBinnedData
+
+        """
+        if self.fit_type == "Gaussian":
+            thr = stats.norm.cdf(threshold, self.coeffs)
+            
+        elif self.fit_type == "Poisson":
+            thr = stats.poisson.cdf(threshold, self.coeffs)
+
+        elif self.fit_type == "GEV":   
+            thr = stats.genextreme.cdf(threshold, self.coeffs)
+
+        print(thr)
+        if plot:
+            plt.axvline(x=thr, color='k')
+
+        return self.threshold
 
 
 
@@ -347,9 +353,9 @@ for i, f in enumerate(lst):
 
 Ens = Ensemble(output_path, names)
 hist = HistogramAnalysis(Ens)
-hist.binData(plot=True)
-hist.getThreshold()
-hist.fitBinnedData(fit_type = "Gaussian",plot=True)
+hist.binData(plot=False)
+hist.fitBinnedData(fit_type = "Poisson",plot=True)
+hist.getThreshold(plot=True)
 plt.legend()
 plt.show()
 
@@ -668,4 +674,12 @@ plt.show()
         #self.variable_ds = self.ds.TREFHTMX - 273.15 
         #self.variable_ds.attrs = self.ds.TREFHTMX.attrs 
         #self.variable_ds.attrs["units"] = "ºC"
+
+        #num_years = self.ds["time.year"][-1] - self.ds["time.year"][0] #number of years in simulation
+
+        #counts_10years = self.total / num_years * 10 # number of data points per 10 years
+        #prob1_10yr = 1/(counts_10years) # probability for 1 in 10 years
+        self.threshold = self.variable_ds.quantile(1-.95).data
+        print(f"The 1/10 year value is {self.threshold}")
+
 """
