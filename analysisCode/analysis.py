@@ -6,7 +6,18 @@ CombineYearlyFiles - combines data from a single sim. Crops to Southern Europe a
 
 SingleRun - reads .nc files output by CombineYearlyFiles
 Ensemble -  combines data runs within an ensemble, by reading CombineYearlyFiles .nc output
-HistogramAnalysis - bins data, fits gaussian to binned data, computed threshold..
+HistogramAnalysis - bins data, fits gaussian/poisson/gev to binned data, computes threshold..
+
+Our method:
+0. Read in sim output files, crop to summer months and Southern Europe lat lon, and save as .nc file in ./Data directory (this all happens in CombineYearlyFiles) 
+0.5.  Either - Open saved .nc file. Use Ensemble class to create an ensemble object that can be input to class HistogramAnalysis. 
+      OR (if not looking at an ensemble) - Open saved .nc file. Use SingleRun class to create an SingleRun object that can be input to class HistogramAnalysis. 
+
+(all other steps are in class HistogramAnalysis)
+1. For each spatial gridpoint, calculate how many days per 15-day period are above a HI-cutoff (This value hasn't been decided upon yet -  will change after bias correction. For now we use 305.372K)
+2. Take a weighted average over lat and lon. We do this by multiplying by land fractions and dividing by the sum of land fractions
+3. Bin data into 1-day bins (may change?) to get a histogram
+4. Fit a gaussian to the histogram
 
 
 TODO:
@@ -17,6 +28,8 @@ TODO:
 -add extreme value dist
 -should i be averaging over lon or lats?
 
+
+
 @author : s1935349
 
 """
@@ -25,11 +38,14 @@ TODO:
 import matplotlib.pyplot as plt # matplotlib library
 import xarray as xr# xarray
 import numpy as np # numpy
+from scipy import stats
 import cartopy.crs as ccrs # cartopy projections
 import os
 import glob #for file searching 
 from scipy.optimize import curve_fit
 import seaborn as sns
+import pandas as pd
+import scipy
 
 #makes plots prettier
 sns.set_theme()
@@ -47,9 +63,13 @@ max_lat = 45
 def is_summer(month):
     return (month >= 5) & (month < 10)
 
-def gauss(x, *p):
+def gauss_old(x, *p):
     A, mu, sigma = p
     return A*np.exp(-(x-mu)**2/(2.*sigma**2))
+
+def poiss(x, *p):
+    mu = p[0]
+    return (np.exp(-mu)* mu**x / scipy.special.factorial(x))
 
 def heatind(TK, RH):
     """
@@ -136,7 +156,7 @@ class CombineYearlyFiles:
 
         self.num_years = len(year_files)
 
-        return self.num_years
+        #return self.num_years
 
 class SingleRun:
     """
@@ -152,37 +172,60 @@ class SingleRun:
 
 class Ensemble:
     """
-    Combines data from different simulation sims
+    Combines data from different simulation sims 
 
     inputs:
-       SingleRuns : (lst) list of dir locs where .nc datasets generated using SingleRun combineYears are stored
+       output_path : (str)  dir locs where .nc datasets (already cropped to summer and SE) are stored. ie ('./Data/Historical2023/')
+       names : (lst) list of names of ensemble runs, without '.nc' ending (ie. ['jubauer_0', 's1935349_0',...])
 
-    output(?) is an xarray dataset(?)
     """
     def __init__(self, output_path, names):
-        
+        #lf = xr.open_dataset("/work/ta116/shared/users/tetts_ta/cesm/cesm_inputdata/atm/cam/topo/fv_1.9x2.5_nc3000_Nsw084_Nrs016_Co120_Fi001_ZR_GRNL_031819.nc") 
+        #landfracs = lf.sel(lat=slice(min_lat,max_lat), lon=slice(min_lon,max_lon)).LANDFRAC
         ensemble_ds = xr.open_dataset(output_path + names[0] + ".nc", engine='h5netcdf') 
 
         for i, name in enumerate(names[1:]):
-            sim_new = xr.open_dataset(output_path + names[i] + ".nc", engine='h5netcdf') 
+            sim_new = xr.open_dataset(output_path + names[i] + ".nc", engine='h5netcdf') #* landfracs / landfracs.sum()
             ensemble_ds = xr.concat([ensemble_ds, sim_new], dim = "run") 
-
-        self.ds = ensemble_ds
-        self.averaged_ds = ensemble_ds.mean(dim="run") #averaging over runs
+        
+        #self.ds = ensemble_ds
+        self.ds = ensemble_ds#.mean(dim=("run"))  #averaging over runs
+        self.no_members = len(names)
 
 class HistogramAnalysis:
+    """
+    This is the class to use for fitting data. 
+
+    1. For each spatial gridpoint, calculate how many days per 15-day period are above a HI-cutoff (This value hasn't been decided upon yet -  will change after bias correction. For now we use 305.372K)
+    2. Take a weighted average over lat and lon. We do this by multiplying by land fractions and dividing by the sum of land fractions
+    3. Bin data into 1-day bins (may change?) to get a histogram
+    4. Fit a gaussian to the histogram
+    
+    inputs:
+
+    ensemble : Ensemble OR SingleRun object, with .ds 
+    """
+
     def __init__(self, ensemble):
         self.ds = ensemble.ds
-
-        self.variable_ds = self.ds.TREFHTMX  #CHANGE THIS IF WANTING TO LOOK AT A DIFFERENT VARIABLE
         
-        # Here we're converting to Celsius. I just found this easier to sanity check than Kelvin
-        self.variable_ds = self.ds.TREFHTMX - 273.15 
-        self.variable_ds.attrs = self.ds.TREFHTMX.attrs 
-        self.variable_ds.attrs["units"] = "ºC"
+        
+        #The Heat Index cutoff (305.372K is the Extreme Caution category)
+        HI_cutoff =  305.372 # 312.594 (danger cutoff) 
+
+        heatind_overLand = heatind(self.ds.TREFHTMX,  self.ds.RHREFHT) #calculate HI at all grid points
+        bimonthly = heatind_overLand.where(heatind_overLand > HI_cutoff).resample(time='15D').count() #counting number of days/15 of HI>extreme caution
+
+        # Weighting by landfrac. Essentially a weighted average over lon and lat
+        lf = xr.open_dataset("/work/ta116/shared/users/tetts_ta/cesm/cesm_inputdata/atm/cam/topo/fv_1.9x2.5_nc3000_Nsw084_Nrs016_Co120_Fi001_ZR_GRNL_031819.nc") 
+        landfracs = lf.sel(lat=slice(min_lat,max_lat), lon=slice(min_lon,max_lon)).LANDFRAC
+
+        self.variable_ds = (bimonthly * landfracs).sum(dim=("lat","lon"))  / landfracs.sum().data # weighted spatial average
+
+        self.variable_ds.attrs["long_name"] = f"#Days per 15 with average HI>{HI_cutoff}" # for correct labelling
 
 
-    def binData(self, binspacing = 0.1, plot=False):
+    def binData(self, binspacing = 1, plot=False):
         
         # Creating bins for data. 
         min_val, max_val = self.variable_ds.min(), self.variable_ds.max()
@@ -191,42 +234,22 @@ class HistogramAnalysis:
 
         # Putting data into our bins
         grouped_data =  self.variable_ds.groupby_bins(self.variable_ds, bins, labels=bin_centres) 
-
+        
         counts = (grouped_data.count()).fillna(0)# filling in NaNs
-
-        self.total = np.sum(counts).data # total number of counts
+        
+        self.total = counts.sum().data # total number of counts
 
         probs = counts/self.total # converting to a probability, so we can get a PDF
 
-        if np.sum(probs).data != 1.0: # sanity check 
-            raise Exception(f"The sum of probabilities is {np.sum(probs).data}! It should be 1.0.")
+        #if np.sum(probs).data != 1.0: # sanity check 
+        #    raise Exception(f"The sum of probabilities is {np.sum(probs).data}! It should be 1.0.")
         
         if plot:
-            plt.bar(bin_centres, probs, label = f"Ensemble data")
+            plt.bar(bin_centres, probs, label = f"Simulated data")
             #plt.show()
         
         self.bin_centres = bin_centres
         self.PDF = probs
-
-    def getThreshold(self, num_years):
-        """
-        This has to be run after binData
-
-        num_years : (int) number of years simulation ran for. Can be obtained from CombineYearlyFiles
-        """
-
-        #CHECK THIS!!
-        #avg_ds = self.ds.mean(dim="run") #averaging over runs
-        #avg_temp = avg_ds.TREFHTMX - 273.15
-
-        no_ensemble_members = len(self.ds.run)
-
-        counts_10years = self.total / num_years * 10 / no_ensemble_members
-        prob1_10yr = 1/(counts_10years) #probability for 1 in 10 years
-        self.threshold = self.variable_ds.quantile(1-prob1_10yr).data
-        print(f"The 1/10 year value is {self.threshold}")
-
-        return self.threshold
     
     def fitBinnedData(self, fit_type = "Gaussian", plot=False):
         """
@@ -234,30 +257,130 @@ class HistogramAnalysis:
 
         plt : (boolean) whether to gaussian fit to histogram
         """
+        self.fit_type = fit_type
         if fit_type == "Gaussian":
+            gauss = lambda x, mu, sigma :  stats.norm.pdf(x, mu, sigma) 
+            
             mu = np.mean(self.variable_ds)
-            p0 = [1., mu, 10.] #A, mu, sigma
+            p0 = [mu, 10.] #A, mu, sigma
+            
             coeff, var_matrix = curve_fit(gauss, self.bin_centres, self.PDF , p0=p0)
 
             hist_fit = gauss(self.bin_centres, *coeff)
 
+            coeff, var_matrix = curve_fit(gauss_old, self.bin_centres, self.PDF , p0=[0.01, mu, 10.])
+            hist_fit = gauss_old(self.bin_centres, *coeff)
+
             if plot:
-                plt.plot(self.bin_centres, hist_fit, label =f"Gaussian fit Ensemble")
-                plt.axvline(x=self.threshold, color='k')
+                plt.bar(self.bin_centres, hist_fit, label =f"Gaussian fit Ensemble")
+                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data")
+
             
-            print('Fitted mean = ', coeff[1])
-            print('Fitted standard deviation = ', coeff[2])
-            print('Fitted amp = ', coeff[0])
+            print('Fitted mean = ', coeff[0])
+            print('Fitted standard deviation = ', coeff[1])
+            #print('Fitted amp = ', coeff[0])
 
-            mean  = coeff[1]
-            stdev = coeff[2]
-            amp = coeff[0]
+            mean  = coeff[0]
+            stdev = coeff[1]
+            #amp = coeff[0]
 
-            return mean, stdev, amp
+            self.coeff = coeff
+
+        elif fit_type == "GEV":
+            gev = lambda x, c, loc, scale : stats.genextreme.pdf(x, c, loc, scale)
+            loc0 = np.mean(self.variable_ds)
+            p0 = [-.8, loc0, 1]
+
+            coeff, var_matrix = curve_fit(gev, self.bin_centres, self.PDF , p0=p0)
+
+            hist_fit =  gev(self.bin_centres, *coeff)
+
+            if plot:
+                plt.plot(self.bin_centres, hist_fit, label =f"GEV fit Ensemble")
+                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data")
+            
+            print('Fitted c = ', coeff[0])
+            print('Fitted loc = ', coeff[1])
+            print('Fitted scale = ', coeff[2])
+
+            c  = coeff[0]
+            loc = coeff[1]
+            scale = coeff[2]
+
+            self.coeff = coeff
+
+        elif fit_type == "Poisson":
+            poisson = lambda x, mu : stats.poisson.pmf(x, mu)
+
+            p0 = [np.mean(self.variable_ds)]
+
+            coeff, var_matrix = curve_fit(poiss, self.bin_centres, self.PDF , p0=p0)
+
+            hist_fit =  poiss(self.bin_centres, *coeff)
+
+            if plot:
+                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data")
+                plt.plot(self.bin_centres, hist_fit, label =f"Poisson fit Ensemble", color='orange')
+            
+            print('Fitted mu = ', coeff[0])
+
+            mu = coeff[0]
+
+            self.coeff = coeff
             
         else:
             raise Exception("Sorry, you're gonna have to code this..")
 
+    def getThreshold(self, threshold = 0.95, plot=False):
+        """
+        This has to be run after fitBinnedData
+
+        """
+        if self.fit_type == "Gaussian":
+            thr = stats.norm.cdf(threshold, self.coeff)
+            
+        elif self.fit_type == "Poisson":
+            thr = stats.poisson.cdf(threshold, self.coeff)
+
+        elif self.fit_type == "GEV":   
+            thr = stats.genextreme.cdf(threshold, self.coeff)
+
+        print(thr)
+        if plot:
+            plt.axvline(x=thr[0], color='k')
+
+        return thr
+
+
+###INPUTS
+output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/" #change this to analyse a different dataset in ./Data directory
+fit_type = "GEV"
+ensemble_name = output_path.split('/')[-2]
+
+lst = [os.listdir(output_path)][0]
+lst.sort()
+
+names = []
+for i, f in enumerate(lst):
+    name = f.split('.')[0]
+    names = names + [name]
+
+Ens = Ensemble(output_path, names)
+hist = HistogramAnalysis(Ens)
+hist.binData(plot=False)
+hist.fitBinnedData(fit_type = fit_type,plot=True)
+hist.getThreshold(plot=True)
+plt.title(f"{ensemble_name}")
+plt.legend()
+plt.show()
+
+
+
+
+
+####################################################### EVERYTHING FROM HERE ON IS OUTDATED ##################################################################################
+
+"""
 
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical/"
 
@@ -268,19 +391,47 @@ simon1_sim_path = '/work/ta116/shared/users/tetts_ta/cesm/archive/FHIST_1982_201
 simon2_sim_path = '/work/ta116/shared/users/tetts_ta/cesm/archive/FHIST_1982_2014_OSTIA_a/atm/hist/'
 
 names = ["eleanorMAYSUMMER","tomMAYSUMMER","simon1MAYSUMMER","simon2MAYSUMMER"]
-sim_paths = [eleanor_sim_path, tom_sim_path, simon1_sim_path, simon2_sim_path ] 
-
+#sim_paths = [eleanor_sim_path, tom_sim_path, simon1_sim_path, simon2_sim_path ] 
 
 Ens = Ensemble(output_path, names)
-(Ens.ds.TREFHTMX.isel(lat=2, lon=2).mean(dim="run")).plot.line()
-plt.show()
+#Ens.ds.TREFHTMX.isel(lat=2, lon=2).plot.line()
 hist = HistogramAnalysis(Ens)
 hist.binData(plot=False)
-hist.getThreshold(32)
-hist.fitBinnedData(plot=True)
+hist.getThreshold()
+hist.fitBinnedData(fit_type = "Poisson",plot=True)
+plt.legend()
 plt.show()
+"""
 
 """
+output_path = '/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/'
+sim_parent_path = '/work/ta116/shared/users/eleanorsenior/cesm/archive/PI_2023_ensemble'
+lst = [os.listdir('/work/ta116/shared/users/eleanorsenior/cesm/archive/PI_2023_ensemble')][0]
+lst.sort()
+names = []
+sim_paths = []
+for i, sim_path in enumerate(lst):
+        sim_dir_loc = sim_parent_path +'/'+ sim_path + "/atm/hist/"
+        sim_paths = sim_paths+[sim_dir_loc]
+        names = names+ ["eleanor_"+str(i)]
+#print(names, sim_paths)
+names = ['tetts_ta_0']
+sim_paths = ['/work/ta116/shared/users/tetts_ta/cesm/archive/PI_2023/atm/hist/']
+for ind, name in enumerate(names):
+    CombineYearlyFiles(sim_paths[ind], output_path, name)
+
+names = []
+sim_paths = []
+base = "/work/ta116/shared/users/s1946411/cesm/archive/Historical2023_"
+for i in range(1,26):
+    sim_paths = sim_paths + [base+str(i)+"/atm/hist/" ]
+    names = names + [f'tom_{i}']
+
+print(sim_paths[1])
+for ind, name in enumerate(names):
+    CombineYearlyFiles(sim_paths[ind], output_path, name)
+
+
 means = np.zeros(len(names))
 stdevs = np.zeros(len(names))
 amplitudes = np.zeros(len(names))
@@ -297,7 +448,7 @@ ensemble_stdev = np.mean(stdevs)
 ensemble_amp = np.mean(amplitudes)
 
 Ts = np.arange(0,45,0.1)
-ensemble_fit = gauss(Ts, ensemble_amp, ensemble_mean, ensemble_stdev)
+ensemble_fit = gauss_old(Ts, ensemble_amp, ensemble_mean, ensemble_stdev)
 
 plt.plot(Ts, ensemble_fit, label ="Gaussian fit ENSEMBLE")
 
@@ -501,4 +652,48 @@ p.axes.coastlines()
 plt.draw()
 
 plt.show()
+
+maxtemp  = Ens.ds.where(landfracs.LANDFRAC, drop=True).TREFHTMX.mean(dim="run")
+.isel(time=0)
+p = Ens.ds.where(landfracs.LANDFRAC,  drop=True).TREFHTMX.isel(time=0).mean(dim="run").plot(
+    subplot_kws=dict(projection=ccrs.Orthographic(min_lat, max_lat), facecolor="gray"),
+    transform=ccrs.PlateCarree(),
+)
+p.axes.set_global()
+
+p.axes.coastlines()
+plt.draw()
+
+plt.show()
+
+
+
+        #)* landfracs).sum(dim=("lat","lon"))  / landfracs.sum().data  
+        #print(heatind_overLand)
+        #self.variable_ds = heatind_overLand
+        #self.no_members = ensemble.no_members 
+
+        #rolling_average = self.variable_ds.rolling(time=3).mean()
+        #self.variable_ds = self.rolling_average
+        
+        # Group by year and calculate the maximum rolling average for each year
+        #max_rolling_per_year = rolling_average.groupby('time.year').max()
+        #self.variable_ds = max_rolling_per_year
+
+        #print("Maximum rolling average per year:", max_rolling_per_year)
+        
+        #self.ds.TREFHTMX  #CHANGE THIS IF WANTING TO LOOK AT A DIFFERENT VARIABLE
+         
+        # Here we're converting to Celsius. I just found this easier to sanity check than Kelvin
+        #self.variable_ds = self.ds.TREFHTMX - 273.15 
+        #self.variable_ds.attrs = self.ds.TREFHTMX.attrs 
+        #self.variable_ds.attrs["units"] = "ºC"
+
+        #num_years = self.ds["time.year"][-1] - self.ds["time.year"][0] #number of years in simulation
+
+        #counts_10years = self.total / num_years * 10 # number of data points per 10 years
+        #prob1_10yr = 1/(counts_10years) # probability for 1 in 10 years
+        self.threshold = self.variable_ds.quantile(1-.95).data
+        print(f"The 1/10 year value is {self.threshold}")
+
 """
