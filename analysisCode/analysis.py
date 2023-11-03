@@ -102,10 +102,18 @@ def heatind(TK, RH):
         elif RH[i]>85:
             if TF[i]>80 and TF[i]<87:
                 HIF[i] += ((RH[i]-85)/10)*((87-TF[i])/5)
-
+    """
+    def adj(RH,TF,HIF):
+        HIFadj = np.where(RH<13 and TF>80 and TF<112, HIF-((13-RH[i])/4)*np.sqrt((17-np.abs(TF[i]-95.))/17), HIF)
+        HIFadj = np.where(RH>85 and TF>80 and TF<87, HIF+((RH[i]-85)/10)*((87-TF[i])/5), HIF)
+        return HIFadj
+    
+    # try with np.where instead
+    HIF = np.where(RH>13 and RH<85, HIF, adj(RH, TF,HIF))
+    
     # convert heat index in fahrenheit to Kelvin
     HIK = (HIF-32)*5/9 + 273.15
-    """
+
     #return HIK
     return HIF
 
