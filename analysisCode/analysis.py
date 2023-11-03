@@ -104,12 +104,34 @@ def heatind(TK, RH):
                 HIF[i] += ((RH[i]-85)/10)*((87-TF[i])/5)
     
     def adj(RH,TF,HIF):
-        HIFadj = np.where(RH<13 and TF>80 and TF<112, HIF-((13-RH[i])/4)*np.sqrt((17-np.abs(TF[i]-95.))/17), HIF)
-        HIFadj = np.where(RH>85 and TF>80 and TF<87, HIF+((RH[i]-85)/10)*((87-TF[i])/5), HIF)
+        HIFadj = xr.where((RH<13) & (TF>80) & (TF<112), HIF-((13-RH[i])/4)*np.sqrt((17-np.abs(TF[i]-95.))/17), HIF)
+        HIFadj = xr.where((RH>85) & (TF>80) & (TF<87), HIF+((RH[i]-85)/10)*((87-TF[i])/5), HIF)
         return HIFadj
-    
+    HIF = xr.where((RH>13) & (RH<85), HIF, adj(RH, TF,HIF))
+    """
     # try with np.where instead
-    HIF = np.where(RH>13 and RH<85, HIF, adj(RH, TF,HIF))
+    def adjHI(RH,TF,HIF):
+
+        return HIFadjHI
+    
+    def adjLO(RH,TF,HIF):
+        def adjLOT(RH,TF,HIF):
+            def adjLOHIT(RH,TF,HIF):
+                HIFadjLOHIT = xr.where(TF<112, HIF-((13-RH[i])/4)*np.sqrt((17-np.abs(TF[i]-95.))/17), HIF)
+                return HIFadjLOHIT
+            HIFadjLOT = xr.where(TF>80, adjLOHIT(RH,TF,HIF), HIF)
+            return HIFadjLOT
+        HIFadjLO = adjLOT(RH,TF,HIF)
+        return HIFadjLO
+    
+    def adjHI(RH,TF,HIF):
+        def HIadjT(RH,TF,HIF):
+            HIFadjT = xr.where()
+            return HIFadjT
+        HIFadjHI = xr.where(RH>85, HIadjT(RH,TF,HIF), HIF)
+        return HIFadjHI
+    #
+    HIF = np.where(RH>13, adjHI(RH,TF,HIF), adjLO(RH,TF,HIF))
     """
     # convert heat index in fahrenheit to Kelvin
     HIK = (HIF-32)*5/9 + 273.15
@@ -135,7 +157,7 @@ class CombineYearlyFiles:
         """
 
         year_files = sorted(glob.glob(sim_dir_loc + "*.cam.h1.*")) # these are the yearly files. We sort them because the last file (2015) has no summer months and breaks the code.
-        
+
         # We open the first file and use this as the array we'll concatenate everything else to
         file0=year_files[0]
         ds=xr.open_dataset(file0) 
@@ -394,6 +416,7 @@ class HistogramAnalysis:
 
 
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/" #change this to analyse a different dataset in ./Data directory
+#output_path = "/work/ta116/shared/users/eleanorsenior/analysis/Data/PI_2023/"
 fit_type = "Gaussian"
 ensemble_name = output_path.split('/')[-2]
 
@@ -414,6 +437,7 @@ thr_PI = hist_PI.getThreshold(threshold=0.9, plot=True, ensemble_name=ensemble_n
 #plt.title(f"{ensemble_name}")
 
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023/"
+#output_path = "/work/ta116/shared/users/eleanorsenior/analysis/Data/Historical2023/"
 ensemble_name = output_path.split('/')[-2]
 
 lst = [os.listdir(output_path)][0]
