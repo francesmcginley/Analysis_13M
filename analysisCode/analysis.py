@@ -93,6 +93,7 @@ def heatind(TK, RH):
     TF = (TK-273.15)*9/5 + 32
     HIF = c1 + c2*TF + c3*RH + c4*TF*RH + c5*(TF**2) + c6*(RH**2) + c7*(TF**2)*RH + c8*TF*(RH**2) + c9*(TF**2)*(RH**2)
     
+    """
     # i have found another thing which does adjustments
     #  If the RH is less than 13% and the temperature is between 80 and 112 degrees F, then the following adjustment is subtracted from HI:
     # ADJUSTMENT = [(13-RH)/4]*SQRT{[17-ABS(T-95.)]/17}
@@ -106,7 +107,15 @@ def heatind(TK, RH):
         elif RH[i]>85:
             if TF[i]>80 and TF[i]<87:
                 HIF[i] += ((RH[i]-85)/10)*((87-TF[i])/5)
-
+    """
+    def adj(RH,TF,HIF):
+        HIFadj = np.where(RH<13 and TF>80 and TF<112, HIF-((13-RH[i])/4)*np.sqrt((17-np.abs(TF[i]-95.))/17), HIF)
+        HIFadj = np.where(RH>85 and TF>80 and TF<87, HIF+((RH[i]-85)/10)*((87-TF[i])/5), HIF)
+        return HIFadj
+    
+    # try with np.where instead
+    HIF = np.where(RH>13 and RH<85, HIF, adj(RH, TF,HIF))
+    
     # convert heat index in fahrenheit to Kelvin
     HIK = (HIF-32)*5/9 + 273.15
     
