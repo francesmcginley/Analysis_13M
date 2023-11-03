@@ -88,7 +88,7 @@ def heatind(TK, RH):
     # convert Kelvin to Fahrenheit
     TF = (TK-273.15)*9/5 + 32
     HIF = c1 + c2*TF + c3*RH + c4*TF*RH + c5*(TF**2) + c6*(RH**2) + c7*(TF**2)*RH + c8*TF*(RH**2) + c9*(TF**2)*(RH**2)
-    
+    """
     # i have found another thing which does adjustments
     #  If the RH is less than 13% and the temperature is between 80 and 112 degrees F, then the following adjustment is subtracted from HI:
     # ADJUSTMENT = [(13-RH)/4]*SQRT{[17-ABS(T-95.)]/17}
@@ -105,8 +105,9 @@ def heatind(TK, RH):
 
     # convert heat index in fahrenheit to Kelvin
     HIK = (HIF-32)*5/9 + 273.15
-    
-    return HIK
+    """
+    #return HIK
+    return HIF
 
 class CombineYearlyFiles:
 
@@ -206,19 +207,23 @@ class HistogramAnalysis:
         
         
         #The Heat Index cutoff (305.372K is the Extreme Caution category)
-        HI_cutoff =  305.372 # 312.594 (danger cutoff) 
+        #HI_cutoff =  305.372 # 312.594 (danger cutoff) 
 
         heatind_overLand = heatind(self.ds.TREFHTMX,  self.ds.RHREFHT) #calculate HI at all grid points
-        bimonthly = heatind_overLand.where(heatind_overLand > HI_cutoff).resample(time='15D').count() #counting number of days/15 of HI>extreme caution
+
+        #bimonthly = heatind_overLand.where(heatind_overLand > HI_cutoff).resample(time='15D').count() #counting number of days/15 of HI>extreme caution
 
         # Weighting by landfrac. Essentially a weighted average over lon and lat
         lf = xr.open_dataset("/work/ta116/shared/users/tetts_ta/cesm/cesm_inputdata/atm/cam/topo/fv_1.9x2.5_nc3000_Nsw084_Nrs016_Co120_Fi001_ZR_GRNL_031819.nc") 
         landfracs = lf.sel(lat=slice(min_lat,max_lat), lon=slice(min_lon,max_lon)).LANDFRAC
 
-        self.variable_ds = (bimonthly * landfracs).sum(dim=("lat","lon"))  / landfracs.sum().data # weighted spatial average
+        #self.variable_ds = (bimonthly * landfracs).sum(dim=("lat","lon"))  / landfracs.sum().data # weighted spatial average
+        #self.variable_ds.attrs["long_name"] = f"#Days per 15 with average HI>{HI_cutoff}" # for correct labelling
 
-        self.variable_ds.attrs["long_name"] = f"#Days per 15 with average HI>{HI_cutoff}" # for correct labelling
-
+        spatially_averaged_HI = (heatind_overLand * landfracs).sum(dim=("lat","lon"))  / landfracs.sum().data # weighted spatial average
+        self.variable_ds = spatially_averaged_HI.groupby('time.year').max() #taking the maximum value of the summer
+        self.variable_ds.attrs["long_name"] = f"#Maximum SE-averaged HI per summer" # for correct labelling
+        
 
     def binData(self, binspacing = 1, plot=False):
         
@@ -240,7 +245,7 @@ class HistogramAnalysis:
         #    raise Exception(f"The sum of probabilities is {np.sum(probs).data}! It should be 1.0.")
         
         if plot:
-            plt.bar(bin_centres, probs, label = f"Simulated data")
+            plt.bar(bin_centres, probs, label = f"Simulated data", alpha = 0.8)
             #plt.show()
         
         self.bin_centres = bin_centres
@@ -267,9 +272,8 @@ class HistogramAnalysis:
             hist_fit = gauss_old(self.bin_centres, *coeff)
 
             if plot:
-                plt.bar(self.bin_centres, hist_fit, label =f"Gaussian fit Ensemble", color=color)
-                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data", color=color)
-
+                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data {ensemble_name}", color=color, alpha = 0.8)
+                plt.plot(self.bin_centres, hist_fit, label =f"Gaussian fit {ensemble_name}", color=color)
             
             print('Fitted mean = ', coeff[0])
             print('Fitted standard deviation = ', coeff[1])
@@ -292,7 +296,7 @@ class HistogramAnalysis:
 
             if plot:
                 plt.plot(self.bin_centres, hist_fit, label =f"GEV fit Ensemble {ensemble_name}",color=color)
-                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data  {ensemble_name}", color=color)
+                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data  {ensemble_name}", color=color, alpha = 0.8)
             
             print('Fitted c = ', coeff[0])
             print('Fitted loc = ', coeff[1])
@@ -316,7 +320,7 @@ class HistogramAnalysis:
             hist_fit =  poiss(self.bin_centres, *coeff)
 
             if plot:
-                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data  {ensemble_name}", color=color)
+                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data  {ensemble_name}", color=color, alpha = 0.8)
                 plt.plot(self.bin_centres, hist_fit, label =f"Poisson fit Ensemble  {ensemble_name}", color=color)
             
             print('Fitted mu = ', coeff[0])
@@ -338,7 +342,7 @@ class HistogramAnalysis:
 
             if plot:
                 plt.plot(self.bin_centres, hist_fit, label =f"Pareto fit Ensemble  {ensemble_name}", color=color)
-                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data  {ensemble_name}", color=color)
+                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data  {ensemble_name}", color=color, alpha = 0.8)
             
             print('Fitted b = ', coeff[0])
             print('Fitted loc = ', coeff[1])
@@ -380,7 +384,7 @@ class HistogramAnalysis:
 ###INPUTS
 
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/" #change this to analyse a different dataset in ./Data directory
-fit_type = "Poisson"
+fit_type = "Gaussian"
 ensemble_name = output_path.split('/')[-2]
 
 lst = [os.listdir(output_path)][0]
@@ -395,8 +399,8 @@ Ens = Ensemble(output_path, names)
 hist_PI = HistogramAnalysis(Ens)
 hist_PI.binData(plot=False)
 hist_PI.fitBinnedData(fit_type = fit_type,plot=True, ensemble_name=ensemble_name, color=color)
-thr_PI = hist_PI.getThreshold(threshold=0.5, plot=True, ensemble_name=ensemble_name, color=color)
-coeffs = hist_PI.coeff
+thr_PI = hist_PI.getThreshold(threshold=0.9, plot=True, ensemble_name=ensemble_name, color=color)
+#coeffs = hist_PI.coeff
 #plt.title(f"{ensemble_name}")
 
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023/"
@@ -415,23 +419,12 @@ Ens = Ensemble(output_path, names)
 hist_2023 = HistogramAnalysis(Ens)
 hist_2023.binData(plot=False)
 hist_2023.fitBinnedData(fit_type = fit_type,plot=True, ensemble_name=ensemble_name, color=color)
-thr_2023 = hist_2023.getThreshold(threshold=0.5,plot=True, ensemble_name=ensemble_name, color=color)
+thr_2023 = hist_2023.getThreshold(threshold=0.9,plot=True, ensemble_name=ensemble_name, color=color)
 plt.title(f"Comparing Historical2023 and PI_2023")
 
 
 plt.legend()
 plt.show()
-
-
-#plt.plot(hist.bin_centres, stats.genextreme.pdf(hist.bin_centres,  -2.2228824509769116, 2.6929800202388736, 5.381104853794224), label='Historical2023')
-#PI_2023:
-#Fitted c =  -2.0088646041539535
-#Fitted loc =  1.8422002611315016
-#Fitted scale =  3.1348101719270263
-#Historical2023
-#Fitted c =  -2.2228824509769116
-#Fitted loc =  2.6929800202388736
-#Fitted scale =  5.381104853794224
 
 
 
