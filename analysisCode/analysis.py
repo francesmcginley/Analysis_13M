@@ -21,12 +21,8 @@ Our method:
 
 
 TODO:
--average over lat and lon
--threshold might be wrong
--is ensemble binning doing what I think it should?
--use land frac to extract land data only??
--add extreme value dist
--should i be averaging over lon or lats?
+- Update HI cutoff if stats are still terrible after bias has been determined
+- Get a sensible threshold...
 
 
 
@@ -93,6 +89,20 @@ def heatind(TK, RH):
     TF = (TK-273.15)*9/5 + 32
     HIF = c1 + c2*TF + c3*RH + c4*TF*RH + c5*(TF**2) + c6*(RH**2) + c7*(TF**2)*RH + c8*TF*(RH**2) + c9*(TF**2)*(RH**2)
     
+    # i have found another thing which does adjustments
+    #  If the RH is less than 13% and the temperature is between 80 and 112 degrees F, then the following adjustment is subtracted from HI:
+    # ADJUSTMENT = [(13-RH)/4]*SQRT{[17-ABS(T-95.)]/17}
+    for i in range(len(RH)):
+        if RH[i]<13:
+            if TF[i]>80 and TF[i]<112:
+                HIF[i] -= ((13-RH[i])/4)*np.sqrt((17-np.abs(TF[i]-95.))/17)
+
+        # On the other hand, if the RH is greater than 85% and the temperature is between 80 and 87 degrees F, then the following adjustment is added to HI:
+        # ADJUSTMENT = [(RH-85)/10] * [(87-T)/5]
+        elif RH[i]>85:
+            if TF[i]>80 and TF[i]<87:
+                HIF[i] += ((RH[i]-85)/10)*((87-TF[i])/5)
+
     # convert heat index in fahrenheit to Kelvin
     HIK = (HIF-32)*5/9 + 273.15
     
@@ -236,7 +246,7 @@ class HistogramAnalysis:
         self.bin_centres = bin_centres
         self.PDF = probs
     
-    def fitBinnedData(self, fit_type = "Gaussian", plot=False):
+    def fitBinnedData(self, fit_type = "Gaussian", plot=False, ensemble_name=None, color=None):
         """
         This has to be run after binData
 
@@ -257,8 +267,8 @@ class HistogramAnalysis:
             hist_fit = gauss_old(self.bin_centres, *coeff)
 
             if plot:
-                plt.bar(self.bin_centres, hist_fit, label =f"Gaussian fit Ensemble")
-                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data")
+                plt.bar(self.bin_centres, hist_fit, label =f"Gaussian fit Ensemble", color=color)
+                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data", color=color)
 
             
             print('Fitted mean = ', coeff[0])
@@ -281,8 +291,8 @@ class HistogramAnalysis:
             hist_fit =  gev(self.bin_centres, *coeff)
 
             if plot:
-                plt.plot(self.bin_centres, hist_fit, label =f"GEV fit Ensemble")
-                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data")
+                plt.plot(self.bin_centres, hist_fit, label =f"GEV fit Ensemble {ensemble_name}",color=color)
+                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data  {ensemble_name}", color=color)
             
             print('Fitted c = ', coeff[0])
             print('Fitted loc = ', coeff[1])
@@ -295,19 +305,22 @@ class HistogramAnalysis:
             self.coeff = coeff
 
         elif fit_type == "Poisson":
-            poisson = lambda x, mu : stats.poisson.pmf(x, mu)
+            poisson = lambda x, mu, loc : stats.poisson.pmf(x, mu, loc)
 
             p0 = [np.mean(self.variable_ds)]
 
-            coeff, var_matrix = curve_fit(poiss, self.bin_centres, self.PDF , p0=p0)
+            #coeff, var_matrix = curve_fit(poisson, self.bin_centres, self.PDF , p0=[3, np.mean(self.variable_ds)])
+            #hist_fit =  poisson(self.bin_centres, *coeff)
 
+            coeff, var_matrix = curve_fit(poiss, self.bin_centres, self.PDF , p0=p0)
             hist_fit =  poiss(self.bin_centres, *coeff)
 
             if plot:
-                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data")
-                plt.plot(self.bin_centres, hist_fit, label =f"Poisson fit Ensemble", color='orange')
+                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data  {ensemble_name}", color=color)
+                plt.plot(self.bin_centres, hist_fit, label =f"Poisson fit Ensemble  {ensemble_name}", color=color)
             
             print('Fitted mu = ', coeff[0])
+            #print('Fitted loc = ', coeff[1])
 
             mu = coeff[0]
 
@@ -324,8 +337,8 @@ class HistogramAnalysis:
             hist_fit =  pareto(self.bin_centres, *coeff)
 
             if plot:
-                plt.plot(self.bin_centres, hist_fit, label =f"Pareto fit Ensemble")
-                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data")
+                plt.plot(self.bin_centres, hist_fit, label =f"Pareto fit Ensemble  {ensemble_name}", color=color)
+                plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data  {ensemble_name}", color=color)
             
             print('Fitted b = ', coeff[0])
             print('Fitted loc = ', coeff[1])
@@ -340,7 +353,7 @@ class HistogramAnalysis:
         else:
             raise Exception("Sorry, you're gonna have to code this..")
 
-    def getThreshold(self, threshold = 0.9, plot=False):
+    def getThreshold(self, threshold = 0.9, plot=False, ensemble_name = None,  color=None):
         """
         This has to be run after fitBinnedData
 
@@ -359,13 +372,14 @@ class HistogramAnalysis:
 
         print(thr)
         if plot:
-            plt.axvline(x=thr[0], color='k')
+            plt.axvline(x=thr[0], linestyle="dashed", label = f"{ensemble_name} {threshold*100}% ", color=color)
 
         return thr
 
 
 ###INPUTS
-output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023/" #change this to analyse a different dataset in ./Data directory
+
+output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/" #change this to analyse a different dataset in ./Data directory
 fit_type = "Poisson"
 ensemble_name = output_path.split('/')[-2]
 
@@ -376,17 +390,40 @@ names = []
 for i, f in enumerate(lst):
     name = f.split('.')[0]
     names = names + [name]
+color='goldenrod'
+Ens = Ensemble(output_path, names)
+hist_PI = HistogramAnalysis(Ens)
+hist_PI.binData(plot=False)
+hist_PI.fitBinnedData(fit_type = fit_type,plot=True, ensemble_name=ensemble_name, color=color)
+thr_PI = hist_PI.getThreshold(threshold=0.5, plot=True, ensemble_name=ensemble_name, color=color)
+coeffs = hist_PI.coeff
+#plt.title(f"{ensemble_name}")
+
+output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023/"
+ensemble_name = output_path.split('/')[-2]
+
+lst = [os.listdir(output_path)][0]
+lst.sort()
+
+names = []
+color = 'cornflowerblue'
+for i, f in enumerate(lst):
+    name = f.split('.')[0]
+    names = names + [name]
 
 Ens = Ensemble(output_path, names)
-hist = HistogramAnalysis(Ens)
-hist.binData(plot=False)
-hist.fitBinnedData(fit_type = fit_type,plot=True)
-hist.getThreshold(plot=True)
-plt.title(f"{ensemble_name}")
-plt.plot(hist.bin_centres, stats.genextreme.pdf(hist.bin_centres,  -2.2228824509769116, 2.6929800202388736, 5.381104853794224), label='Historical2023')
+hist_2023 = HistogramAnalysis(Ens)
+hist_2023.binData(plot=False)
+hist_2023.fitBinnedData(fit_type = fit_type,plot=True, ensemble_name=ensemble_name, color=color)
+thr_2023 = hist_2023.getThreshold(threshold=0.5,plot=True, ensemble_name=ensemble_name, color=color)
+plt.title(f"Comparing Historical2023 and PI_2023")
+
+
 plt.legend()
 plt.show()
 
+
+#plt.plot(hist.bin_centres, stats.genextreme.pdf(hist.bin_centres,  -2.2228824509769116, 2.6929800202388736, 5.381104853794224), label='Historical2023')
 #PI_2023:
 #Fitted c =  -2.0088646041539535
 #Fitted loc =  1.8422002611315016
@@ -399,9 +436,32 @@ plt.show()
 
 
 
+
 ####################################################### EVERYTHING FROM HERE ON IS OUTDATED ##################################################################################
 
 """
+output_path = '/home/ta116/ta116/s1935349/analysisCode/Data/Historical_2023/'
+sim_parent_path = '/work/ta116/shared/users/jubauer/cesm/archive/'
+lst = [os.listdir('/work/ta116/shared/users/jubauer/cesm/archive/')][0]
+lst.sort()
+names = []
+sim_paths = []
+sim_name = []
+for i in range(1,25):
+    sim_paths += [sim_parent_path+f"Historical2023_{i}/atm/hist/"]
+    names = names+ ["jubauer_"+str(i)]
+
+#for i, sim_path in enumerate(lst):
+#        sim_dir_loc = sim_parent_path +'/'+ sim_name[i] + "/atm/hist/"
+#        sim_paths = sim_paths+[sim_dir_loc]
+        
+
+print(names, sim_paths)
+
+#sim_paths = ['/work/ta116/shared/users/tetts_ta/cesm/archive/PI_2023/atm/hist/']
+for ind, name in enumerate(names):
+    CombineYearlyFiles(sim_paths[ind], output_path, name)
+
 
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical/"
 
