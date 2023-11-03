@@ -102,7 +102,7 @@ def heatind(TK, RH):
         elif RH[i]>85:
             if TF[i]>80 and TF[i]<87:
                 HIF[i] += ((RH[i]-85)/10)*((87-TF[i])/5)
-    """
+    
     def adj(RH,TF,HIF):
         HIFadj = np.where(RH<13 and TF>80 and TF<112, HIF-((13-RH[i])/4)*np.sqrt((17-np.abs(TF[i]-95.))/17), HIF)
         HIFadj = np.where(RH>85 and TF>80 and TF<87, HIF+((RH[i]-85)/10)*((87-TF[i])/5), HIF)
@@ -110,7 +110,7 @@ def heatind(TK, RH):
     
     # try with np.where instead
     HIF = np.where(RH>13 and RH<85, HIF, adj(RH, TF,HIF))
-    
+    """
     # convert heat index in fahrenheit to Kelvin
     HIK = (HIF-32)*5/9 + 273.15
 
@@ -267,17 +267,18 @@ class HistogramAnalysis:
         """
         self.fit_type = fit_type
         if fit_type == "Gaussian":
-            gauss = lambda x, mu, sigma :  stats.norm.pdf(x, mu, sigma) 
+            gauss = lambda x, loc, scale :  stats.norm.pdf(x, loc=loc, scale=scale) 
             
             mu = np.mean(self.variable_ds)
-            p0 = [mu, 10.] #A, mu, sigma
+            p0 = [mu, 10.] #loc, scale (mu, sigma?)
             
             coeff, var_matrix = curve_fit(gauss, self.bin_centres, self.PDF , p0=p0)
+            print(coeff)
 
             hist_fit = gauss(self.bin_centres, *coeff)
 
-            coeff, var_matrix = curve_fit(gauss_old, self.bin_centres, self.PDF , p0=[0.01, mu, 10.])
-            hist_fit = gauss_old(self.bin_centres, *coeff)
+            coeff, var_matrix = curve_fit(gauss, self.bin_centres, self.PDF , p0=p0)
+            hist_fit = gauss(self.bin_centres, *coeff)
 
             if plot:
                 plt.bar(self.bin_centres, self.PDF, label =f"Simulated Data {ensemble_name}", color=color, alpha = 0.8)
@@ -391,6 +392,7 @@ class HistogramAnalysis:
 
 ###INPUTS
 
+
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/" #change this to analyse a different dataset in ./Data directory
 fit_type = "Gaussian"
 ensemble_name = output_path.split('/')[-2]
@@ -429,6 +431,28 @@ hist_2023.binData(plot=False)
 hist_2023.fitBinnedData(fit_type = fit_type,plot=True, ensemble_name=ensemble_name, color=color)
 thr_2023 = hist_2023.getThreshold(threshold=0.9,plot=True, ensemble_name=ensemble_name, color=color)
 plt.title(f"Comparing Historical2023 and PI_2023")
+
+
+
+output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical/"
+ensemble_name = output_path.split('/')[-2]
+
+lst = [os.listdir(output_path)][0]
+lst.sort()
+
+names = []
+color = 'darkseagreen'
+for i, f in enumerate(lst):
+    name = f.split('.')[0]
+    names = names + [name]
+
+Ens = Ensemble(output_path, names)
+hist = HistogramAnalysis(Ens)
+hist.binData(plot=False)
+hist.fitBinnedData(fit_type = fit_type,plot=True, ensemble_name=ensemble_name, color=color)
+thr = hist.getThreshold(threshold=0.9,plot=True, ensemble_name=ensemble_name, color=color)
+plt.title(f"Historical Ensemble")
+print(thr)
 
 
 plt.legend()
