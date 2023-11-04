@@ -373,13 +373,8 @@ class HistogramAnalysis:
 
 
 ###INPUTS
-output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical/"
-sim_paths = ['/work/ta116/shared/users/jubauer/cesm/archive/Historical/atm/hist/']
-names = ["jubauerMAYSUMMER"]
-for ind, name in enumerate(names):
-    CombineYearlyFiles(sim_paths[ind], output_path, name)
 
-"""
+
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/" #change this to analyse a different dataset in ./Data directory
 #output_path = "/work/ta116/shared/users/eleanorsenior/analysis/Data/PI_2023/"
 fit_type = "Gaussian"
@@ -447,13 +442,29 @@ print(thr)
 plt.legend()
 plt.show()
 
-"""
+
 
 
 
 ####################################################### EVERYTHING FROM HERE ON IS OUTDATED ##################################################################################
 
 """
+
+output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/"
+
+sim_parent_path = '/work/ta116/shared/users/s1946411/cesm/archive/'
+lst = [os.listdir('/work/ta116/shared/users/s1946411/cesm/archive/')][0]
+lst.sort()
+names = []
+sim_paths = []
+
+for i in range(1,26):
+    sim_paths += [sim_parent_path+f"PI_2023_{i}/atm/hist/"]
+    names = names+ ["tom_"+str(i)]
+
+for ind, name in enumerate(names):
+    CombineYearlyFiles(sim_paths[ind], output_path, name)
+
 output_path = '/home/ta116/ta116/s1935349/analysisCode/Data/Historical_2023/'
 sim_parent_path = '/work/ta116/shared/users/jubauer/cesm/archive/'
 lst = [os.listdir('/work/ta116/shared/users/jubauer/cesm/archive/')][0]
