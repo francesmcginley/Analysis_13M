@@ -87,57 +87,18 @@ def heatind(TK, RH):
     
     # convert Kelvin to Fahrenheit
     TF = (TK-273.15)*9/5 + 32
-    HIF = c1 + c2*TF + c3*RH + c4*TF*RH + c5*(TF**2) + c6*(RH**2) + c7*(TF**2)*RH + c8*TF*(RH**2) + c9*(TF**2)*(RH**2)
-    """
-    # i have found another thing which does adjustments
-    #  If the RH is less than 13% and the temperature is between 80 and 112 degrees F, then the following adjustment is subtracted from HI:
-    # ADJUSTMENT = [(13-RH)/4]*SQRT{[17-ABS(T-95.)]/17}
-    for i in range(len(RH)):
-        if RH[i]<13:
-            if TF[i]>80 and TF[i]<112:
-                HIF[i] -= ((13-RH[i])/4)*np.sqrt((17-np.abs(TF[i]-95.))/17)
+    HIF = c1 + c2*TF + c3*RH + c4*TF*RH + c5*(TF**2) + c6*(RH**2) + c7*(TF**2)*RH + c8*TF*(RH*2) + c9*(TF**2)*(RH**2)
 
-        # On the other hand, if the RH is greater than 85% and the temperature is between 80 and 87 degrees F, then the following adjustment is added to HI:
-        # ADJUSTMENT = [(RH-85)/10] * [(87-T)/5]
-        elif RH[i]>85:
-            if TF[i]>80 and TF[i]<87:
-                HIF[i] += ((RH[i]-85)/10)*((87-TF[i])/5)
-    
     def adj(RH,TF,HIF):
         HIFadj = xr.where((RH<13) & (TF>80) & (TF<112), HIF-((13-RH[i])/4)*np.sqrt((17-np.abs(TF[i]-95.))/17), HIF)
         HIFadj = xr.where((RH>85) & (TF>80) & (TF<87), HIF+((RH[i]-85)/10)*((87-TF[i])/5), HIF)
         return HIFadj
     HIF = xr.where((RH>13) & (RH<85), HIF, adj(RH, TF,HIF))
-    """
-    # try with np.where instead
-    def adjHI(RH,TF,HIF):
 
-        return HIFadjHI
-    
-    def adjLO(RH,TF,HIF):
-        def adjLOT(RH,TF,HIF):
-            def adjLOHIT(RH,TF,HIF):
-                HIFadjLOHIT = xr.where(TF<112, HIF-((13-RH[i])/4)*np.sqrt((17-np.abs(TF[i]-95.))/17), HIF)
-                return HIFadjLOHIT
-            HIFadjLOT = xr.where(TF>80, adjLOHIT(RH,TF,HIF), HIF)
-            return HIFadjLOT
-        HIFadjLO = adjLOT(RH,TF,HIF)
-        return HIFadjLO
-    
-    def adjHI(RH,TF,HIF):
-        def HIadjT(RH,TF,HIF):
-            HIFadjT = xr.where()
-            return HIFadjT
-        HIFadjHI = xr.where(RH>85, HIadjT(RH,TF,HIF), HIF)
-        return HIFadjHI
-    #
-    HIF = np.where(RH>13, adjHI(RH,TF,HIF), adjLO(RH,TF,HIF))
-    """
     # convert heat index in fahrenheit to Kelvin
     HIK = (HIF-32)*5/9 + 273.15
 
-    #return HIK
-    return HIF
+    return HIK
 
 class CombineYearlyFiles:
 
@@ -413,8 +374,13 @@ class HistogramAnalysis:
 
 
 ###INPUTS
+output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical/"
+sim_paths = ['/work/ta116/shared/users/jubauer/cesm/archive/Historical/atm/hist/']
+names = ["jubauerMAYSUMMER"]
+for ind, name in enumerate(names):
+    CombineYearlyFiles(sim_paths[ind], output_path, name)
 
-
+"""
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/" #change this to analyse a different dataset in ./Data directory
 #output_path = "/work/ta116/shared/users/eleanorsenior/analysis/Data/PI_2023/"
 fit_type = "Gaussian"
@@ -432,7 +398,7 @@ Ens = Ensemble(output_path, names)
 hist_PI = HistogramAnalysis(Ens)
 hist_PI.binData(plot=False)
 hist_PI.fitBinnedData(fit_type = fit_type,plot=True, ensemble_name=ensemble_name, color=color)
-thr_PI = hist_PI.getThreshold(threshold=0.9, plot=True, ensemble_name=ensemble_name, color=color)
+thr_PI = hist_PI.getThreshold(threshold=0.1, plot=True, ensemble_name=ensemble_name, color=color)
 #coeffs = hist_PI.coeff
 #plt.title(f"{ensemble_name}")
 
@@ -453,7 +419,7 @@ Ens = Ensemble(output_path, names)
 hist_2023 = HistogramAnalysis(Ens)
 hist_2023.binData(plot=False)
 hist_2023.fitBinnedData(fit_type = fit_type,plot=True, ensemble_name=ensemble_name, color=color)
-thr_2023 = hist_2023.getThreshold(threshold=0.9,plot=True, ensemble_name=ensemble_name, color=color)
+thr_2023 = hist_2023.getThreshold(threshold=0.1,plot=True, ensemble_name=ensemble_name, color=color)
 plt.title(f"Comparing Historical2023 and PI_2023")
 
 
@@ -474,7 +440,7 @@ Ens = Ensemble(output_path, names)
 hist = HistogramAnalysis(Ens)
 hist.binData(plot=False)
 hist.fitBinnedData(fit_type = fit_type,plot=True, ensemble_name=ensemble_name, color=color)
-thr = hist.getThreshold(threshold=0.9,plot=True, ensemble_name=ensemble_name, color=color)
+thr = hist.getThreshold(threshold=0.1,plot=True, ensemble_name=ensemble_name, color=color)
 plt.title(f"Historical Ensemble")
 print(thr)
 
@@ -482,7 +448,7 @@ print(thr)
 plt.legend()
 plt.show()
 
-
+"""
 
 
 
