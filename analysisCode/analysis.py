@@ -14,14 +14,13 @@ Our method:
       OR (if not looking at an ensemble) - Open saved .nc file. Use SingleRun class to create an SingleRun object that can be input to class HistogramAnalysis. 
 
 (all other steps are in class HistogramAnalysis)
-1. For each spatial gridpoint, calculate how many days per 15-day period are above a HI-cutoff (This value hasn't been decided upon yet -  will change after bias correction. For now we use 305.372K)
+1. For each spatial gridpoint, calculate the Heat index
 2. Take a weighted average over lat and lon. We do this by multiplying by land fractions and dividing by the sum of land fractions
 3. Bin data into 1-day bins (may change?) to get a histogram
 4. Fit a gaussian to the histogram
 
 
 TODO:
-- Update HI cutoff if stats are still terrible after bias has been determined
 - Get a sensible threshold...
 
 
