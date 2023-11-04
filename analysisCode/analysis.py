@@ -86,11 +86,11 @@ def heatind(TK, RH):
     
     # convert Kelvin to Fahrenheit
     TF = (TK-273.15)*9/5 + 32
-    HIF = c1 + c2*TF + c3*RH + c4*TF*RH + c5*(TF**2) + c6*(RH**2) + c7*(TF**2)*RH + c8*TF*(RH*2) + c9*(TF**2)*(RH**2)
+    HIF = c1 + c2*TF + c3*RH + c4*TF*RH + c5*(TF**2) + c6*(RH**2) + c7*(TF**2)*RH + c8*TF*(RH**2) + c9*(TF**2)*(RH**2)
 
     def adj(RH,TF,HIF):
-        HIFadj = xr.where((RH<13) & (TF>80) & (TF<112), HIF-((13-RH[i])/4)*np.sqrt((17-np.abs(TF[i]-95.))/17), HIF)
-        HIFadj = xr.where((RH>85) & (TF>80) & (TF<87), HIF+((RH[i]-85)/10)*((87-TF[i])/5), HIF)
+        HIFadj = xr.where((RH<13) & (TF>80) & (TF<112), HIF-((13-RH)/4)*np.sqrt((17-np.abs(TF-95.))/17), HIF)
+        HIFadj = xr.where((RH>85) & (TF>80) & (TF<87), HIF+((RH-85)/10)*((87-TF)/5), HIF)
         return HIFadj
     HIF = xr.where((RH>13) & (RH<85), HIF, adj(RH, TF,HIF))
 
@@ -375,8 +375,8 @@ class HistogramAnalysis:
 ###INPUTS ()
 
 
-output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/" #change this to analyse a different dataset in ./Data directory
-#output_path = "/work/ta116/shared/users/eleanorsenior/analysis/Data/PI_2023/"
+#output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/" #change this to analyse a different dataset in ./Data directory
+output_path = "/work/ta116/shared/users/eleanorsenior/analysis/Data/PI_2023/"
 fit_type = "Gaussian"
 ensemble_name = output_path.split('/')[-2]
 
@@ -396,8 +396,8 @@ thr_PI = hist_PI.getThreshold(threshold=0.9, plot=True, ensemble_name=ensemble_n
 #coeffs = hist_PI.coeff
 #plt.title(f"{ensemble_name}")
 
-output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023/"
-#output_path = "/work/ta116/shared/users/eleanorsenior/analysis/Data/Historical2023/"
+#output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023/"
+output_path = "/work/ta116/shared/users/eleanorsenior/analysis/Data/Historical2023/"
 ensemble_name = output_path.split('/')[-2]
 
 lst = [os.listdir(output_path)][0]
@@ -418,7 +418,8 @@ plt.title(f"Comparing Historical2023 and PI_2023")
 
 
 
-output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical/"
+#output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical/"
+output_path = "/work/ta116/shared/users/eleanorsenior/analysis/Data/Historical/"
 ensemble_name = output_path.split('/')[-2]
 fit_type = "Gaussian"
 lst = [os.listdir(output_path)][0]
@@ -443,7 +444,7 @@ print(thr)
 #ys = stats.norm.pdf(xs, coeffs[0], coeffs[1]) 
 #plt.plot(xs, ys)
 
-print(f"Mean historical2023 value ({hist_2023.mean()}) is the ",stats.norm.cdf(hist_2023.mean(), coeffs[0], coeffs[1]), "percentile?" )
+#print(f"Mean historical2023 value ({hist_2023.mean()}) is the ",stats.norm.cdf(hist_2023.mean(), coeffs[0], coeffs[1]), "percentile?" )
 
 plt.legend()
 plt.show()
