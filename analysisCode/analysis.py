@@ -354,25 +354,25 @@ class HistogramAnalysis:
 
         """
         if self.fit_type == "Gaussian":
-            thr = stats.norm.ppf(threshold, self.coeff)
+            thr = stats.norm.ppf(threshold, self.coeff[0], self.coeff[1])
             
         elif self.fit_type == "Poisson":
-            thr = stats.poisson.ppf(threshold, self.coeff)
+            thr = stats.poisson.ppf(threshold, self.coeff[0], self.coeff[1])
 
         elif self.fit_type == "GEV":   
-            thr = stats.genextreme.ppf(threshold, self.coeff)
+            thr = stats.genextreme.ppf(threshold, self.coeff[0], self.coeff[1], self.coeff[2])
 
         elif self.fit_type == "Pareto":
-            thr = stats.pareto.ppf(threshold, self.coeff)
+            thr = stats.pareto.ppf(threshold, self.coeff[0], self.coeff[1], self.coeff[2])
 
         print(thr)
         if plot:
-            plt.axvline(x=thr[0], linestyle="dashed", label = f"{ensemble_name} {threshold*100}% ", color=color)
+            plt.axvline(x=thr, linestyle="dashed", label = f"{ensemble_name} {threshold*100}% ", color=color)
 
         return thr
 
 
-###INPUTS
+###INPUTS ()
 
 
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/" #change this to analyse a different dataset in ./Data directory
@@ -392,7 +392,7 @@ Ens = Ensemble(output_path, names)
 hist_PI = HistogramAnalysis(Ens)
 hist_PI.binData(plot=False)
 hist_PI.fitBinnedData(fit_type = fit_type,plot=True, ensemble_name=ensemble_name, color=color)
-thr_PI = hist_PI.getThreshold(threshold=0.1, plot=True, ensemble_name=ensemble_name, color=color)
+thr_PI = hist_PI.getThreshold(threshold=0.9, plot=True, ensemble_name=ensemble_name, color=color)
 #coeffs = hist_PI.coeff
 #plt.title(f"{ensemble_name}")
 
@@ -413,14 +413,14 @@ Ens = Ensemble(output_path, names)
 hist_2023 = HistogramAnalysis(Ens)
 hist_2023.binData(plot=False)
 hist_2023.fitBinnedData(fit_type = fit_type,plot=True, ensemble_name=ensemble_name, color=color)
-thr_2023 = hist_2023.getThreshold(threshold=0.1,plot=True, ensemble_name=ensemble_name, color=color)
+thr_2023 = hist_2023.getThreshold(threshold=0.9,plot=True, ensemble_name=ensemble_name, color=color)
 plt.title(f"Comparing Historical2023 and PI_2023")
 
 
 
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical/"
 ensemble_name = output_path.split('/')[-2]
-
+fit_type = "Gaussian"
 lst = [os.listdir(output_path)][0]
 lst.sort()
 
@@ -434,10 +434,16 @@ Ens = Ensemble(output_path, names)
 hist = HistogramAnalysis(Ens)
 hist.binData(plot=False)
 hist.fitBinnedData(fit_type = fit_type,plot=True, ensemble_name=ensemble_name, color=color)
-thr = hist.getThreshold(threshold=0.1,plot=True, ensemble_name=ensemble_name, color=color)
-plt.title(f"Historical Ensemble")
+thr = hist.getThreshold(threshold=0.9,plot=True, ensemble_name=ensemble_name, color=color)
+coeffs = hist.coeff
+#plt.title(f"Historical Ensemble")
 print(thr)
 
+#xs = np.linspace(hist.variable_ds.min(), hist.variable_ds.max(), 100)
+#ys = stats.norm.pdf(xs, coeffs[0], coeffs[1]) 
+#plt.plot(xs, ys)
+
+print(f"Mean historical2023 value ({hist_2023.mean()}) is the ",stats.norm.cdf(hist_2023.mean(), coeffs[0], coeffs[1]), "percentile?" )
 
 plt.legend()
 plt.show()
