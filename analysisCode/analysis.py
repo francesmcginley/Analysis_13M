@@ -86,11 +86,11 @@ def heatind(TK, RH):
     
     # convert Kelvin to Fahrenheit
     TF = (TK-273.15)*9/5 + 32
-    HIF = c1 + c2*TF + c3*RH + c4*TF*RH + c5*(TF**2) + c6*(RH**2) + c7*(TF**2)*RH + c8*TF*(RH*2) + c9*(TF**2)*(RH**2)
+    HIF = c1 + c2*TF + c3*RH + c4*TF*RH + c5*(TF**2) + c6*(RH**2) + c7*(TF**2)*RH + c8*TF*(RH**2) + c9*(TF**2)*(RH**2)
 
     def adj(RH,TF,HIF):
-        HIFadj = xr.where((RH<13) & (TF>80) & (TF<112), HIF-((13-RH[i])/4)*np.sqrt((17-np.abs(TF[i]-95.))/17), HIF)
-        HIFadj = xr.where((RH>85) & (TF>80) & (TF<87), HIF+((RH[i]-85)/10)*((87-TF[i])/5), HIF)
+        HIFadj = xr.where((RH<13) & (TF>80) & (TF<112), HIF-((13-RH)/4)*np.sqrt((17-np.abs(TF-95.))/17), HIF)
+        HIFadj = xr.where((RH>85) & (TF>80) & (TF<87), HIF+((RH-85)/10)*((87-TF)/5), HIF)
         return HIFadj
     HIF = xr.where((RH>13) & (RH<85), HIF, adj(RH, TF,HIF))
 
@@ -372,49 +372,10 @@ class HistogramAnalysis:
         return thr
 
 
-###INPUTS ()
 
 
-output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/" #change this to analyse a different dataset in ./Data directory
-#output_path = "/work/ta116/shared/users/eleanorsenior/analysis/Data/PI_2023/"
-fit_type = "Gaussian"
-ensemble_name = output_path.split('/')[-2]
+###INPUTS (Everything below is me trying to get results I needed, feel free to delete/ reformat to suit needs)
 
-lst = [os.listdir(output_path)][0]
-lst.sort()
-
-names = []
-for i, f in enumerate(lst):
-    name = f.split('.')[0]
-    names = names + [name]
-color='goldenrod'
-Ens = Ensemble(output_path, names)
-hist_PI = HistogramAnalysis(Ens)
-hist_PI.binData(plot=False)
-hist_PI.fitBinnedData(fit_type = fit_type,plot=True, ensemble_name=ensemble_name, color=color)
-thr_PI = hist_PI.getThreshold(threshold=0.9, plot=True, ensemble_name=ensemble_name, color=color)
-#coeffs = hist_PI.coeff
-#plt.title(f"{ensemble_name}")
-
-output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023/"
-#output_path = "/work/ta116/shared/users/eleanorsenior/analysis/Data/Historical2023/"
-ensemble_name = output_path.split('/')[-2]
-
-lst = [os.listdir(output_path)][0]
-lst.sort()
-
-names = []
-color = 'cornflowerblue'
-for i, f in enumerate(lst):
-    name = f.split('.')[0]
-    names = names + [name]
-
-Ens = Ensemble(output_path, names)
-hist_2023 = HistogramAnalysis(Ens)
-hist_2023.binData(plot=False)
-hist_2023.fitBinnedData(fit_type = fit_type,plot=True, ensemble_name=ensemble_name, color=color)
-thr_2023 = hist_2023.getThreshold(threshold=0.9,plot=True, ensemble_name=ensemble_name, color=color)
-plt.title(f"Comparing Historical2023 and PI_2023")
 
 
 
@@ -433,17 +394,77 @@ for i, f in enumerate(lst):
 Ens = Ensemble(output_path, names)
 hist = HistogramAnalysis(Ens)
 hist.binData(plot=False)
-hist.fitBinnedData(fit_type = fit_type,plot=True, ensemble_name=ensemble_name, color=color)
+hist.fitBinnedData(fit_type = fit_type,plot=False, ensemble_name=ensemble_name, color=color)
 thr = hist.getThreshold(threshold=0.9,plot=True, ensemble_name=ensemble_name, color=color)
 coeffs = hist.coeff
 #plt.title(f"Historical Ensemble")
-print(thr)
+#print(thr)
 
 #xs = np.linspace(hist.variable_ds.min(), hist.variable_ds.max(), 100)
 #ys = stats.norm.pdf(xs, coeffs[0], coeffs[1]) 
 #plt.plot(xs, ys)
 
-print(f"Mean historical2023 value ({hist_2023.mean()}) is the ",stats.norm.cdf(hist_2023.mean(), coeffs[0], coeffs[1]), "percentile?" )
+#print(f"Mean historical2023 value ({hist_2023.variable_ds.mean()}) is the ",stats.norm.cdf(hist_2023.variable_ds.mean(), coeffs[0], coeffs[1]), "percentile?" )
+
+
+output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/" #change this to analyse a different dataset in ./Data directory
+#output_path = "/work/ta116/shared/users/eleanorsenior/analysis/Data/PI_2023/"
+fit_type = "Gaussian"
+ensemble_name = output_path.split('/')[-2]
+
+lst = [os.listdir(output_path)][0]
+lst.sort()
+
+names = []
+for i, f in enumerate(lst):
+    name = f.split('.')[0]
+    names = names + [name]
+color='goldenrod'
+Ens = Ensemble(output_path, names)
+hist_PI = HistogramAnalysis(Ens)
+hist_PI.binData(plot=False)
+hist_PI.fitBinnedData(fit_type = fit_type,plot=False, ensemble_name=ensemble_name, color=color)
+#thr_PI = hist_PI.getThreshold(threshold=0.9, plot=False, ensemble_name=ensemble_name, color=color)
+#coeffs = hist_PI.coeff
+#plt.title(f"{ensemble_name}")
+xs = np.linspace(hist_PI.variable_ds.min(), hist_PI.variable_ds.max(), 100)
+ys = stats.norm.pdf(xs, hist_PI.coeff[0], hist_PI.coeff[1]) 
+plt.plot(xs, ys, color = color, label = f"{ensemble_name + fit_type} fit")
+plt.fill_between(xs, ys, where=(xs>thr), color=color, alpha=0.5)
+
+output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023/"
+#output_path = "/work/ta116/shared/users/eleanorsenior/analysis/Data/Historical2023/"
+ensemble_name = output_path.split('/')[-2]
+
+lst = [os.listdir(output_path)][0]
+lst.sort()
+
+names = []
+color = 'cornflowerblue'
+for i, f in enumerate(lst):
+    name = f.split('.')[0]
+    names = names + [name]
+
+Ens = Ensemble(output_path, names)
+hist_2023 = HistogramAnalysis(Ens)
+hist_2023.binData(plot=False)
+hist_2023.fitBinnedData(fit_type = fit_type,plot=False, ensemble_name=ensemble_name, color=color)
+
+xs = np.linspace(hist_2023.variable_ds.min(), hist_2023.variable_ds.max(), 100)
+ys = stats.norm.pdf(xs, hist_2023.coeff[0], hist_2023.coeff[1]) 
+plt.plot(xs, ys, color = color, label = f"{ensemble_name + fit_type} fit")
+plt.fill_between(xs, ys, where=(xs>thr), color=color, alpha=0.5)
+plt.title(f"Comparing Historical2023 and PI_2023")
+
+
+
+hist_2023_percentile = stats.norm.cdf(thr, hist_2023.coeff[0], hist_2023.coeff[1])
+PI_2023_percentile = stats.norm.cdf(thr, hist_PI.coeff[0], hist_PI.coeff[1])
+
+print(f"Our threshold value is: {thr}" )
+print(f"PI_2023 percentage above threshold: {100*(1-PI_2023_percentile)}%")
+print(f"Historical2023 percentage above threshold: {100*(1-hist_2023_percentile)}%")
+
 
 plt.legend()
 plt.show()
@@ -455,6 +476,30 @@ plt.show()
 ####################################################### EVERYTHING FROM HERE ON IS OUTDATED ##################################################################################
 
 """
+
+output_path = '/home/ta116/ta116/s1935349/analysisCode/Data/Historical2023/'
+sim_parent_path = '/work/ta116/shared/users/jubauer/cesm/archive/'
+lst = [os.listdir('/work/ta116/shared/users/jubauer/cesm/archive/')][0]
+lst.sort()
+names = []
+sim_paths = []
+sim_name = []
+for i in range(9,25):
+    sim_paths += [sim_parent_path+f"Historical2023_{i}/atm/hist/"]
+    names = names+ ["jub_"+str(i)]
+
+#broken jubauer sims: 5,8
+#for i, sim_path in enumerate(lst):
+#        sim_dir_loc = sim_parent_path +'/'+ sim_name[i] + "/atm/hist/"
+#        sim_paths = sim_paths+[sim_dir_loc]
+        
+
+#print(names, sim_paths)
+
+#sim_paths = ['/work/ta116/shared/users/tetts_ta/cesm/archive/PI_2023/atm/hist/']
+for ind, name in enumerate(names):
+    CombineYearlyFiles(sim_paths[ind], output_path, name)
+
 
 output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/PI_2023/"
 
