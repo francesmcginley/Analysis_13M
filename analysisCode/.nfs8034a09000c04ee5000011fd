@@ -379,8 +379,7 @@ class HistogramAnalysis:
 
 
 
-#output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical/"
-output_path = "/work/ta116/shared/users/eleanorsenior/analysis/Data/Historical/"
+output_path = "/home/ta116/ta116/s1935349/analysisCode/Data/Historical/"
 ensemble_name = output_path.split('/')[-2]
 fit_type = "Gaussian"
 lst = [os.listdir(output_path)][0]
